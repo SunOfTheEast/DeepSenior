@@ -191,7 +191,8 @@ def load_problem_from_json(path: str) -> ProblemContext:
 
 def _get_live_llm_kwargs() -> dict:
     """Read live LLM config from environment variables."""
-    cfg = _LiveLLMConfig()
+    from agent.infra.llm import get_llm_config
+    cfg = get_llm_config()
     return {
         "api_key": cfg.api_key,
         "base_url": cfg.base_url,
