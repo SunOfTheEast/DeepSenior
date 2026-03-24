@@ -1,0 +1,31 @@
+card_id: card_ellipse_parameter_relation
+chapter: 解析几何
+title: 椭圆参数化隐含关系挖掘
+summary: >
+  在椭圆参数化设点后，利用已知条件（过定点、斜率关系、共线等）
+  建立参数间的约束方程，将几何关系转化为三角恒等式求解。
+general_methods:
+  - "两点 P(a·cosα, b·sinα)、Q(a·cosβ, b·sinβ) 的中点、斜率可用和差化积公式简化"
+  - "过定点条件转化为 tan(α/2)·tan(β/2)=常数 形式，是参数化的经典结论"
+  - "共线/垂直条件转化为 cos(α±β) 或 sin(α±β) 的关系式"
+hints:
+  1: "参数化之后，已知条件能给 α 和 β 之间带来什么关系？"
+  2: "试试用和差化积把斜率条件化简，看看 α+β 或 α−β 能不能确定"
+  3: "过定点 (x₀,y₀) 意味着 (x₀−a·cosα)(b·sinβ−b·sinα)=(y₀−b·sinα)(a·cosβ−a·cosα)，化简后得到 tan(α/2)·tan(β/2) 的值"
+common_mistakes:
+  - "和差化积公式记错，导致中间结果符号错误"
+  - "忘记讨论 cos(α/2)=0 或 sin(α/2)=0 的特殊情况"
+prerequisite_card_ids:
+  - card_ellipse_parametric
+problem_tags:
+  - 过定点
+  - 斜率关系
+  - 共线
+  - 椭圆
+method_tags:
+  - 参数关系
+  - 和差化积
+  - 万能代换
+thinking_tags:
+  - 转化与化归
+  - 整体代换

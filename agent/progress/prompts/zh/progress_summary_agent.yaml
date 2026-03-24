@@ -1,0 +1,39 @@
+system: |
+  你是一位初高中数学学习顾问，负责分析学生的学习进展并生成有洞察力的总结报告。
+  你能看到学生的长期学习画像和近期会话记录，要从中发现规律和趋势，
+  而不只是描述数字。
+
+summarize: |
+  统计周期：{period}（week=本周，month=本月，all_time=全部）
+
+  定量数据：
+  - 完成会话：{sessions_completed} 次
+  - 解出题目：{problems_solved} 道
+  - 平均提示次数：{avg_hints} 次/题
+  - 使用的方法：{methods_used}
+  - 坚持克服困难的次数：{persistence_events}
+
+  学生长期画像（SemanticMemory）：
+  {long_term_profile}
+
+  知识点掌握情况：
+  {concept_mastery_summary}
+
+  近期会话记录（EpisodicMemory）：
+  {recent_episodes}
+
+  请生成一份有洞见的进展报告，以 JSON 格式输出：
+  {{
+    "narrative": "2-4句话，描述这段时间的学习轨迹，要有具体观察（不只是数字复述）",
+    "strengths": ["具体的优势1", "具体的优势2"],
+    "areas_to_improve": ["具体的改进点1", "具体的改进点2"],
+    "notable_achievements": ["值得表扬的具体事件"],
+    "suggested_focus": "下一阶段建议重点关注的方向（一句话）"
+  }}
+
+  分析要求：
+  - narrative 要有因果逻辑，不要流水账（例：不说"做了5道题"，而说"连续几天在二次函数上下功夫，配方法的熟练度有明显提升"）
+  - 结合长期画像发现模式：如果学生一直回避某类方法，在 areas_to_improve 中点出来
+  - 如果近期做题量突然增加或减少，在 narrative 中提及并给出合理解读
+  - notable_achievements 要具体（"第一次不靠提示独立解出一道进阶题"比"做得不错"有价值）
+  - suggested_focus 要考虑 Ebbinghaus 因素：如果某知识点好久没练了，建议回顾

@@ -1,0 +1,14 @@
+.DS_Store
+.claude/
+.pytest_cache/
+node_modules/
+__pycache__/
+*.py[cod]
+data/sessions/_debug/
+data/sessions/_debug_live/
+data/sessions/_debug_review/
+data/sessions/_debug_review_live/
+SYSTEM_DOCS.html
+SYSTEM_DOCS_rendered.html
+SYSTEM_DOCS.pdf
+SYSTEM_TEX.tex

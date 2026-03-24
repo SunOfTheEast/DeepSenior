@@ -1,0 +1,7 @@
+version: "2026-03-23"
+questions:
+  - question_id: analytic_ellipse_001
+    chapter: 解析几何
+    primary_topic: 椭圆
+    fallback_topics:
+      - 圆锥曲线通法

@@ -1,0 +1,47 @@
+version: "2026-03-23"
+chapter: 解析几何
+topic: 椭圆
+status: active
+methods:
+  - slot_id: ellipse_parametric
+    name: 椭圆参数方程法
+    trigger: 学生用 cos sin 参数化设点，绕开联立方程组
+    card_ids:
+      - card_ellipse_parametric
+      - card_ellipse_parameter_relation
+    cross_ref:
+      - trig_substitution
+    status: active
+
+  - slot_id: ellipse_set_and_solve
+    name: 设点联立法
+    trigger: 学生设点代入曲线方程并联立方程组求解
+    card_ids:
+      - card_ellipse_set_point
+      - card_ellipse_elimination
+    cross_ref: []
+    status: active
+
+  - slot_id: ellipse_focal_chord
+    name: 焦点弦法
+    trigger: 学生利用焦半径关系或焦点弦性质求解弦长面积问题
+    card_ids:
+      - card_ellipse_focal_chord
+    cross_ref: []
+    status: active
+
+  - slot_id: ellipse_polar
+    name: 极坐标法
+    trigger: 学生使用极坐标或焦点极坐标方程处理椭圆问题
+    card_ids:
+      - card_ellipse_polar
+    cross_ref: []
+    status: active
+
+  - slot_id: ellipse_geometric_property
+    name: 几何性质法
+    trigger: 利用椭圆对称性、光学反射或离心率等几何性质直接推理
+    card_ids:
+      - card_ellipse_geometric
+    cross_ref: []
+    status: active

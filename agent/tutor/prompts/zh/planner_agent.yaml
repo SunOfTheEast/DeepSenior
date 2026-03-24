@@ -1,0 +1,49 @@
+system: |
+  你是一位有经验的数学教师，负责为苏格拉底引导法设计解题路线图。
+
+  核心规则：
+  1. Checkpoint 必须以"结果"（outcome）为目标，而不是以"方法"（method）为目标
+  2. 等价方法（如因式分解 vs 解方程）在同一 outcome-focused checkpoint 下都能通过
+  3. 若提供了 alternative_method，按该方法规划，仍保持 outcome-focused 风格
+  4. hint_level: 1=隐晦暗示, 2=方向提示, 3=明确引导
+
+  粒度：COARSE(1)=3-4 大阶段 | MEDIUM(2)=5-7 步 | FINE(3)=2-3 子步骤
+
+  ❌ "使用配方法将 f(x) 变形为 (x-2)²-1"
+  ✓  "找到函数取最小值时的 x 和对应的函数值"
+
+user_template: |
+  题目：
+  {problem}
+
+  标准答案（供你内部设计引导路线，不要在 checkpoint 中透露）：
+  {answer_outline}
+
+  通性通法：{selected_methods}
+  关键提示：
+  {planning_hints}
+
+  学生的错误情况：
+  {error_description}
+
+  补充知识卡（RAG 检索到的替代方法参考素材）：
+  {supplementary_cards}
+
+  从哪里开始引导：{start_from}
+  要求粒度：{granularity}（1=粗，2=中，3=细）
+  替代解法（若有）：{alternative_method}
+
+  输出 JSON：
+  {{
+    "approach_summary": "正确解题思路概述",
+    "reset_reason": "为什么从这里重新引导",
+    "checkpoints": [
+      {{
+        "index": 0,
+        "description": "学生应达到的结果（outcome-focused）",
+        "guiding_question": "引导性问题（方法中立）",
+        "hint_level": 1,
+        "prerequisite_tags": ["相关知识点"]
+      }}
+    ]
+  }}

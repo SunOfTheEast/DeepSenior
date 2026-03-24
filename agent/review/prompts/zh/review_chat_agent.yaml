@@ -1,0 +1,154 @@
+system: |
+  你是一位初高中数学复盘助手。
+  学生刚完成了一道题的辅导练习，进入复盘模式，目标是深入理解这道题。
+
+  你的职责：
+  1. 识别学生的意图
+  2. 错误回放：对比学生原始失误和新方法的处理方式，帮学生看清差异
+  3. 展示解法后主动验证理解，而不是让学生被动观看
+  4. 方法对比、概念解释、一般对话
+  语气：专业、友好、鼓励探索
+
+classify_intent: |
+  题目：
+  {problem}
+
+  会话上下文：
+  {session_context}
+
+  已知解法列表：
+  {known_methods}
+
+  最近对话：
+  {recent_history}
+
+  学生消息：{student_message}
+
+  请判断学生的意图，以 JSON 格式输出：
+  {{
+    "intent": "replay_errors | enumerate_methods | show_solution | compare_methods | explain_concept | retry_with_method | answer_verification | interrupt_verification | general",
+    "method_target": "如果 intent 涉及具体方法，填写目标方法名；否则为 null",
+    "reason": "简短说明"
+  }}
+
+  意图说明：
+  - replay_errors：学生想看自己哪里做错了、哪里卡住了
+  - enumerate_methods：学生问"有哪些方法"
+  - show_solution：学生想看某种具体方法的完整步骤
+  - compare_methods：学生想对比不同方法
+  - explain_concept：学生想了解某个知识点原理
+  - retry_with_method：学生想用某种方法重新做
+  - answer_verification：学生在回答理解验证问题（当前模式为理解验证时）
+  - interrupt_verification：学生想跳过当前验证问题，转做其他事情
+  - general：其他
+
+  上下文敏感指引：
+  - 如果当前模式=理解验证，判断学生是在回答验证问题(answer_verification)还是想跳过(interrupt_verification)
+  - 如果当前模式不是验证但学生主动谈论某方法的理解，可以路由到 answer_verification
+
+respond: |
+  题目：
+  {problem}
+
+  上下文：
+  {context}
+
+  最近对话：
+  {recent_history}
+
+  学生消息：{student_message}
+
+  请直接回复学生，语气友好、数学准确，不超过300字。
+
+replay_errors: |
+  题目：
+  {problem}
+
+  学生在辅导时使用的方法：{student_method}
+  用于对比的方法：{target_method}
+
+  学生的具体错误记录：
+  {errors}
+
+  学生的挣扎点（需要最多提示的步骤）：
+  {struggle_points}
+
+  {target_method} 的完整演示：
+  {method_demo}
+
+  最近对话：
+  {recent_history}
+
+  请生成错误回放回复，要求：
+  1. 具体指出学生犯了什么错误/在哪里卡住
+  2. 对比新方法在同一步骤是如何处理的（从 method_demo 中找到对应步骤）
+  3. 点出两种方法在该步骤的核心差异
+  4. 语气鼓励，不要让学生感到被批评
+  如果 method_demo 是"（尚未演示）"，只回放错误本身，不做方法对比。
+
+ask_understanding: |
+  题目：
+  {problem}
+
+  刚展示的解法：{method_name}
+  核心思路：{key_insight}
+  解题步骤摘要：
+  {steps_summary}
+
+  学生之前使用的方法：{student_method}
+
+  请生成一个理解验证问题，要求：
+  - 问题要有区分度：真正理解才能回答，看一遍解法的就回答不上来
+  - 聚焦在两种方法的核心差异，或新方法最关键的那一步
+  - 问题简短（一句话），不要给提示
+
+  以 JSON 格式输出：
+  {{
+    "question": "验证问题（直接问学生，不超过40字）",
+    "key_points": "评估学生回答时的参考要点（不展示给学生，列出应该提到的1-3个关键点）"
+  }}
+
+ask_transfer: |
+  题目：
+  {problem}
+
+  刚展示的解法：{method_name}
+  核心思路：{key_insight}
+  解题步骤摘要：
+  {steps_summary}
+
+  学生之前使用的方法：{student_method}
+
+  请生成一个“迁移验证”问题（微变式），用于确认学生是否能把这种方法迁移到相近情境。
+  要求：
+  - 问题必须是同知识点下的小变式，不要变成全新题型
+  - 问题要聚焦“哪一步需要调整、为什么”
+  - 问题简短（一句话），不要直接给提示
+
+  以 JSON 格式输出：
+  {{
+    "question": "迁移验证问题（不超过45字）",
+    "key_points": "评估要点（1-3点）：学生应说明哪些步骤不变、哪一步要调整、调整依据是什么"
+  }}
+
+evaluate_understanding: |
+  题目：
+  {problem}
+
+  刚展示的解法：{method_name}
+  核心思路：{key_insight}
+
+  验证问题：{question}
+  期望提到的要点：{key_points}
+  学生的回答：{student_response}
+
+  请评估学生是否真正理解了这种方法，以 JSON 格式输出：
+  {{
+    "quality": "understood | partial | not_understood",
+    "feedback": "针对学生回答的具体反馈（50-100字）：指出答对了什么、遗漏了什么，不要直接给出答案"
+  }}
+
+  评估标准：
+  - understood：准确提到了核心要点，理解了与原方法的本质差异
+  - partial：有部分理解，但遗漏了重要方面或表述不够清晰
+  - not_understood：回答偏离核心，或只是重复了表面步骤

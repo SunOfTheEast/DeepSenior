@@ -1,0 +1,36 @@
+version: "2026-03-23"
+chapter: _cross_topic
+topic: 公共方法
+status: active
+methods:
+  - slot_id: trig_substitution
+    name: 三角代换
+    trigger: 学生用 sin cos tan 替换变量简化表达式
+    card_ids:
+      - card_trig_substitution
+    cross_ref: []
+    status: active
+
+  - slot_id: vector_method
+    name: 向量法
+    trigger: 学生建立向量关系并用点积模长求解
+    card_ids:
+      - card_vector_method
+    cross_ref: []
+    status: active
+
+  - slot_id: mean_inequality
+    name: 均值不等式求最值
+    trigger: 利用 AM-GM 或柯西不等式求最值
+    card_ids:
+      - card_mean_inequality
+    cross_ref: []
+    status: active
+
+  - slot_id: recursion_to_sequence
+    name: 递推建模
+    trigger: 构造递推关系式将问题转化为数列求解
+    card_ids:
+      - card_recursion_sequence
+    cross_ref: []
+    status: active
