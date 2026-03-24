@@ -1,0 +1,33 @@
+card_id: card_sequence_auxiliary_transform
+chapter: 数列
+title: 构造辅助数列法
+summary: >
+  当递推式中的增量恰好像某个已知函数的差分时，可构造辅助数列 b_n=a_n-f(n)，
+  把原递推转化成常数列、等差列或等比列。比如 2n+1=(n+1)^2-n^2，
+  就可以尝试把 a_n-n^2 看成新数列。
+general_methods:
+  - "先观察递推中的非齐次项，判断它是否像某个熟悉函数的差分"
+  - "尝试构造 b_n=a_n-f(n) 或 b_n=a_n/g(n)，让 b_{n+1}-b_n=0 或 b_{n+1}/b_n 为常数"
+  - "先求辅助数列，再还原原数列 a_n"
+hints:
+  1: "递推里出现的 2n+1 像不像某个常见表达式的前后两项之差？"
+  2: "如果把 a_n-n^2 看成一个新数列，b_{n+1} 和 b_n 有什么关系？"
+  3: "先证明辅助数列是常数列，再用初值把常数求出来"
+common_mistakes:
+  - "构造了辅助数列，却没有把 b_{n+1} 全部展开到位"
+  - "只验证了一两个 n，就断定辅助数列是常数列"
+  - "求出 b_n 后忘记再换回 a_n"
+prerequisite_card_ids:
+  - card_sequence_difference_summation
+problem_tags:
+  - 数列
+  - 递推
+  - 构造辅助数列
+  - 通项
+method_tags:
+  - 辅助数列
+  - 配凑差分
+  - 转化为常数列
+thinking_tags:
+  - 构造思想
+  - 转化思想

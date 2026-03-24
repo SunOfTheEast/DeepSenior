@@ -1,0 +1,57 @@
+chapter: 数列
+topic: 递推与求和
+version: "2026-03-24"
+
+concepts:
+  - concept_id: concept_sequence_difference
+    name: 逐差求和与递推求通项
+    difficulty: 1
+    prerequisites: []
+    related_slots:
+      - sequence_difference_summation
+    related_card_ids:
+      - card_sequence_difference_summation
+    description: >
+      把递推式写成 a_{n+1}-a_n=f(n)，再通过离散累加得到通项。
+      是处理“前后项差已知”类数列的基本方法。
+
+  - concept_id: concept_sequence_transform
+    name: 递推转基础数列
+    difficulty: 2
+    prerequisites:
+      - concept_sequence_difference
+    related_slots:
+      - sequence_difference_summation
+      - sequence_auxiliary_transform
+    related_card_ids:
+      - card_sequence_recurrence_to_basic
+      - card_sequence_auxiliary_transform
+    description: >
+      识别递推结构并转化为等差列、等比列或常数列，
+      包括作差、作商、平移、缩放与构造辅助数列等策略。
+
+  - concept_id: concept_auxiliary_sequence
+    name: 构造辅助数列
+    difficulty: 3
+    prerequisites:
+      - concept_sequence_transform
+    related_slots:
+      - sequence_auxiliary_transform
+    related_card_ids:
+      - card_sequence_auxiliary_transform
+    description: >
+      当递推中的非齐次项像已知函数差分时，构造 b_n=a_n-f(n) 等辅助数列，
+      将复杂递推转化为可直接求解的基础数列。
+
+  - concept_id: concept_staggered_subtraction
+    name: 错位相减求和
+    difficulty: 3
+    prerequisites:
+      - concept_sequence_transform
+    related_slots:
+      - sequence_staggered_subtraction
+    related_card_ids:
+      - card_sequence_staggered_subtraction
+    description: >
+      对含项号与等比因子混合的求和式，通过 S_n 与 qS_n 错位相减消元，
+      获得新的递推或闭式表达。

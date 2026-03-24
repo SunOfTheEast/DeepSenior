@@ -1,0 +1,30 @@
+card_id: card_sequence_staggered_subtraction
+chapter: 数列
+title: 错位相减法
+summary: >
+  当求和式中同时出现项号 n 和指数因子 q^n 时，常可先设 S_n，
+  再写出 qS_n，与原式错位相减，消去大部分同类项，从而得到可求解的关系式。
+general_methods:
+  - "先设原和式为 S_n，再写出 qS_n"
+  - "把两式上下对齐后相减，观察哪些项会抵消"
+  - "整理得到 S_n 的表达式，并单独处理首项、末项"
+hints:
+  1: "和式里既有 n 又有 q^n，是否可以把整个和式乘一个 q？"
+  2: "写出 qS_n 后，哪些项和原式最适合相减？"
+  3: "注意相减后首尾剩下的项，不要漏项"
+common_mistakes:
+  - "错位时项次没有对齐，导致相减错误"
+  - "只关注中间抵消，漏掉首尾项"
+  - "相减后得到关于 S_n 的方程却忘记移项求解"
+prerequisite_card_ids: []
+problem_tags:
+  - 数列
+  - 求和
+  - 错位相减
+  - 等比因子
+method_tags:
+  - 错位相减
+  - 乘公比
+thinking_tags:
+  - 整体思想
+  - 配对消元

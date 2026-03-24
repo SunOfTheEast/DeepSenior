@@ -22,3 +22,8 @@ questions:
     chapter: 导数
     primary_topic: 导数应用
     fallback_topics: []
+
+  - question_id: sequence_001
+    chapter: 数列
+    primary_topic: 递推与求和
+    fallback_topics: []

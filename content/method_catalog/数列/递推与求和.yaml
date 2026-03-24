@@ -1,0 +1,29 @@
+version: "2026-03-24"
+chapter: 数列
+topic: 递推与求和
+status: active
+methods:
+  - slot_id: sequence_difference_summation
+    name: 逐差求和法
+    trigger: 学生把递推式改写成 a_{n+1}-a_n=f(n) 并通过累加求通项
+    card_ids:
+      - card_sequence_difference_summation
+    cross_ref: []
+    status: active
+
+  - slot_id: sequence_auxiliary_transform
+    name: 构造辅助数列法
+    trigger: 学生构造 b_n=a_n-f(n) 或 b_n=a_n/g(n) 使新数列变成常数列、等差列或等比列
+    card_ids:
+      - card_sequence_auxiliary_transform
+      - card_sequence_recurrence_to_basic
+    cross_ref: []
+    status: active
+
+  - slot_id: sequence_staggered_subtraction
+    name: 错位相减法
+    trigger: 学生把 S_n 与 qS_n 错位相减以处理 n q^n 或类似的乘权求和
+    card_ids:
+      - card_sequence_staggered_subtraction
+    cross_ref: []
+    status: active
