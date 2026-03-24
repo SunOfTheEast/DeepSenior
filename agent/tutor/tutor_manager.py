@@ -463,7 +463,12 @@ class TutorManager:
             )
 
         # 触发条件 B：Checkpoint 通过但检测到替代解法
-        if evaluation.checkpoint_passed and evaluation.used_alternative_method:
+        # 仅首次触发；已标记替代方法后走正常推进，避免重复 flag + 重建 plan
+        if (
+            evaluation.checkpoint_passed
+            and evaluation.used_alternative_method
+            and not session.used_alternative_method
+        ):
             path_result = await self._eval_approach_cached(
                 session,
                 problem_context=session.problem_context,
