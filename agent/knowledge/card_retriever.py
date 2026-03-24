@@ -272,10 +272,33 @@ class CardRetriever:
     ) -> list[str]:
         if not query_text.strip():
             return []
+        candidate_card_ids: list[str] | None = None
+        effective_topic = request.topic
+        if not effective_topic and request.question_id:
+            resolved = self.method_catalog.resolve_topic(
+                question_id=request.question_id,
+                chapter=request.chapter,
+                requested_topic=request.topic,
+            )
+            effective_topic = resolved.topic
+        if effective_topic:
+            topic_catalog = self.method_catalog.get_topic_catalog(
+                chapter=request.chapter,
+                topic=effective_topic,
+            )
+            if topic_catalog:
+                candidate_card_ids = []
+                for slot in topic_catalog.active_methods():
+                    candidate_card_ids = self._merge_ids(
+                        candidate_card_ids,
+                        slot.card_ids,
+                        limit=999,
+                    )
         hits = self.card_index.search(
             query_text,
+            candidate_card_ids=candidate_card_ids,
             chapter=request.chapter,
-            topic=request.topic,
+            topic=effective_topic,
             exclude_card_ids=exclude_ids,
             top_k=max(request.top_k, 5),
         )

@@ -125,7 +125,23 @@ class SimpleCardIndex(CardIndexBase):
     @staticmethod
     def _tokenize(text: str) -> set[str]:
         lowered = (text or "").lower()
-        return {t for t in re.findall(r"[\u4e00-\u9fff]+|[a-z0-9_]+", lowered) if len(t) >= 2}
+        tokens: set[str] = set()
+        for chunk in re.findall(r"[\u4e00-\u9fff]+|[a-z0-9_]+", lowered):
+            if len(chunk) < 2:
+                continue
+            if re.fullmatch(r"[a-z0-9_]+", chunk):
+                tokens.add(chunk)
+                continue
+
+            # 中文连续串按 2-3 字滑窗展开，避免整句查询无法命中卡片摘要。
+            if len(chunk) <= 3:
+                tokens.add(chunk)
+            for n in (2, 3):
+                if len(chunk) < n:
+                    continue
+                for i in range(len(chunk) - n + 1):
+                    tokens.add(chunk[i:i + n])
+        return tokens
 
     def _score(self, query_tokens: set[str], doc: str) -> float:
         doc_lower = doc.lower()
@@ -134,4 +150,3 @@ class SimpleCardIndex(CardIndexBase):
             if token in doc_lower:
                 score += 1.0
         return score
-
