@@ -36,6 +36,15 @@ methods:
       - trig_substitution
     status: active
 
+  - slot_id: parabola_point_difference
+    name: 点差法
+    trigger: 学生将两端点分别代入抛物线方程后相减，用平方差公式建立中点与斜率关系
+    card_ids:
+      - card_parabola_point_difference
+    cross_ref:
+      - parabola_set_and_solve
+    status: active
+
   - slot_id: parabola_reflection
     name: 光学反射/切线法
     trigger: 利用抛物线反射性质或切线方程求解切线、法线相关问题

@@ -36,6 +36,15 @@ methods:
     cross_ref: []
     status: active
 
+  - slot_id: hyperbola_point_difference
+    name: 点差法
+    trigger: 学生将两端点分别代入双曲线方程后相减，用平方差公式建立中点与斜率关系
+    card_ids:
+      - card_hyperbola_point_difference
+    cross_ref:
+      - hyperbola_set_and_solve
+    status: active
+
   - slot_id: hyperbola_geometric_property
     name: 几何性质法
     trigger: 利用双曲线对称性、离心率、准线等几何性质直接推理

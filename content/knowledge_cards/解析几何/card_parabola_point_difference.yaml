@@ -1,0 +1,33 @@
+card_id: card_parabola_point_difference
+chapter: 解析几何
+title: 点差法（抛物线弦中点问题）
+summary: >
+  点差法用于抛物线弦中点问题。以 y²=2px 为例，将两端点代入后相减，
+  得到 (y₁+y₂)(y₁−y₂)=2p(x₁−x₂)，代入中点得 2y₀=2p/k 即 k=p/y₀。
+  抛物线的点差法形式最简，适合快速建立中点-斜率关系。
+general_methods:
+  - "设弦两端点 A(x₁,y₁)、B(x₂,y₂) 均在抛物线 y²=2px 上，相减得 (y₁²−y₂²)=2p(x₁−x₂)"
+  - "平方差展开后代入中点 M(x₀,y₀)：2y₀·(y₁−y₂)=2p·(x₁−x₂)，即 k=p/y₀"
+  - "结合直线附加条件联立求解"
+hints:
+  1: "y₁²=2px₁ 和 y₂²=2px₂ 相减后，左边怎么用平方差展开？"
+  2: "代入中点后得到 k=p/y₀，这个关系式比椭圆和双曲线都简单"
+  3: "用过定点条件再列一个 k 的表达式，两式联立消去 k"
+common_mistakes:
+  - "抛物线只有一条对称轴方向的二次项，点差法形式与椭圆/双曲线不同，不要套错公式"
+  - "忘记抛物线开口方向对 p 符号的影响"
+  - "弦不一定过焦点，要根据题目条件确定附加约束"
+prerequisite_card_ids:
+  - card_parabola_set_point
+problem_tags:
+  - 弦中点
+  - 中点轨迹
+  - 点差法
+  - 抛物线
+method_tags:
+  - 点差法
+  - 中点弦
+  - 平方差
+thinking_tags:
+  - 整体思想
+  - 类比思想

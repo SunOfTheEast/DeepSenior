@@ -38,6 +38,15 @@ methods:
     cross_ref: []
     status: active
 
+  - slot_id: ellipse_point_difference
+    name: 点差法
+    trigger: 学生将两端点分别代入椭圆方程后相减，用平方差公式建立中点与斜率关系
+    card_ids:
+      - card_ellipse_point_difference
+    cross_ref:
+      - ellipse_set_and_solve
+    status: active
+
   - slot_id: ellipse_geometric_property
     name: 几何性质法
     trigger: 利用椭圆对称性、光学反射或离心率等几何性质直接推理
