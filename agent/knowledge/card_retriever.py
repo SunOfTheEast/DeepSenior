@@ -184,11 +184,11 @@ class CardRetriever:
                 f"[{request.session_id or '?'}] audit entries: "
                 f"{[e.task_type for e in audit_entries]}"
             )
-            if self.audit_store:
-                try:
-                    self.audit_store.append(audit_entries)
-                except Exception as exc:
-                    self.logger.warning(f"Failed to persist audit entries: {exc}")
+        if self.audit_store and audit_entries:
+            try:
+                self.audit_store.append(audit_entries)
+            except Exception as exc:
+                self.logger.warning(f"Failed to persist audit entries: {exc}")
         return RetrievalBundle(
             request=request,
             result=result,
@@ -218,25 +218,46 @@ class CardRetriever:
             router_confidence=router_result.confidence if router_result else None,
             selector_confidence=selector_result.confidence if selector_result else None,
             selected_card_ids=list(selected_card_ids),
+            session_id=request.session_id,
         )
+        has_anomaly = False
+
         if router_result and router_result.primary_slot is None:
+            has_anomaly = True
             entries.append(RagAuditEntry(
                 task_type="empty_slot",
                 notes="MethodRouter 未匹配到任何 slot，可能需要新增 method slot",
                 **base,
             ))
         if router_result and router_result.confidence < 0.5 and router_result.primary_slot is not None:
+            has_anomaly = True
             entries.append(RagAuditEntry(
                 task_type="low_router_confidence",
                 notes=f"MethodRouter confidence={router_result.confidence:.2f}，slot 匹配不确定",
                 **base,
             ))
         if selector_result and selector_result.confidence < 0.6:
+            has_anomaly = True
             entries.append(RagAuditEntry(
                 task_type="low_selector_confidence",
                 notes=f"CardSelector confidence={selector_result.confidence:.2f}，候选卡质量不足",
                 **base,
             ))
+
+        # Always log a success entry when no anomalies and cards were found
+        if not has_anomaly and selected_card_ids:
+            entries.append(RagAuditEntry(
+                task_type="retrieval_ok",
+                status="done",
+                notes=(
+                    f"slot={router_result.primary_slot}, "
+                    f"cards={selected_card_ids}, "
+                    f"r_conf={router_result.confidence:.2f}"
+                    if router_result else f"fallback cards={selected_card_ids}"
+                ),
+                **base,
+            ))
+
         return entries
 
     async def _pull_candidate_cards(self, router_result: MethodRouterResult) -> list[CandidateCardSummary]:

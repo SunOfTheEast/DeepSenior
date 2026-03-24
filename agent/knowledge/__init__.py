@@ -8,6 +8,7 @@ from .card_retriever import CardRetriever
 from .card_store import CardStoreBase, FileCardStore, InMemoryCardStore, NullCardStore
 from .concept_registry import ConceptNode, ConceptRegistry
 from .data_structures import (
+    AuditStatus,
     CandidateCardSummary,
     CardRetrieveRequest,
     CardRetrieveResult,
@@ -33,6 +34,7 @@ from .factory import build_card_retriever
 from .method_catalog import MethodCatalog
 
 __all__ = [
+    "AuditStatus",
     "AuditStore",
     "build_card_retriever",
     "CandidateCardSummary",

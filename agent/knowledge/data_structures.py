@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -194,10 +196,22 @@ class CardRetrieveResult:
     retrieval_signature: str = ""
 
 
+class AuditStatus(str, Enum):
+    PENDING = "pending"
+    PROPOSED = "proposed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    DONE = "done"
+
+
 @dataclass
 class RagAuditEntry:
-    """Lightweight audit record written when retrieval confidence is low or slots are missing."""
-    task_type: str              # e.g. "empty_slot", "low_router_confidence", "low_selector_confidence"
+    """Audit record for RAG retrieval events — both anomalies and successes.
+
+    Serves as the actionable audit task with a status lifecycle:
+    pending → proposed → approved/rejected → done
+    """
+    task_type: str              # e.g. "empty_slot", "low_router_confidence", "retrieval_ok", "new_method"
     question_id: str | None
     chapter: str
     topic: str | None
@@ -207,6 +221,12 @@ class RagAuditEntry:
     selector_confidence: float | None = None
     selected_card_ids: list[str] = field(default_factory=list)
     notes: str = ""
+    # --- new fields for audit task lifecycle ---
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    status: str = AuditStatus.PENDING.value
+    session_id: str | None = None
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str | None = None
 
 
 @dataclass

@@ -29,7 +29,9 @@ from typing import Any, AsyncGenerator
 
 from agent.infra.logging import get_logger
 from agent.knowledge.data_structures import (
+    AuditStatus,
     CardRetrieveRequest,
+    RagAuditEntry,
     RetrievalBundle,
     RetrievalConsumer,
     RetrievalGoal,
@@ -563,11 +565,12 @@ class TutorManager:
             alt_method = path_result.student_approach_summary
 
             # 触发 RAG 检索替代方法的知识卡
-            await self._retrieve_supplementary_cards(
+            bundle = await self._retrieve_supplementary_cards(
                 session,
                 student_approach=alt_method,
                 student_work=student_work,
             )
+            self._emit_new_method_audit(session, alt_method, bundle)
 
             fake_result = GraderResult(
                 error_type=ErrorType.ON_TRACK_STUCK,
@@ -645,10 +648,13 @@ class TutorManager:
             )
 
             # 触发 RAG 检索替代方法的知识卡
-            await self._retrieve_supplementary_cards(
+            bundle = await self._retrieve_supplementary_cards(
                 session,
                 student_approach=path_result.student_approach_summary,
                 student_work=student_work,
+            )
+            self._emit_new_method_audit(
+                session, path_result.student_approach_summary, bundle
             )
 
             start_from = path_result.replan_start_from or "从学生当前进度开始"
@@ -883,6 +889,49 @@ class TutorManager:
                 parts.append(f"  易错: {mistakes}")
             lines.append("\n".join(parts))
         return "\n".join(lines)
+
+    def _emit_new_method_audit(
+        self,
+        session: TutorSession,
+        student_approach: str | None,
+        bundle: RetrievalBundle | None,
+    ) -> None:
+        """当学生使用替代方法且 RAG 未命中 slot 时，生成 new_method 审计条目。"""
+        if not bundle:
+            return
+        # 检查 bundle 中是否已有 empty_slot（说明方法不在目录中）
+        has_empty_slot = any(e.task_type == "empty_slot" for e in bundle.audit_entries)
+        if not has_empty_slot:
+            return
+
+        # 从 registry 获取 card_retriever 上的 audit_store
+        retriever = getattr(self.registry, "_card_retriever", None)
+        audit_store = getattr(retriever, "audit_store", None) if retriever else None
+        if not audit_store:
+            return
+
+        entry = RagAuditEntry(
+            task_type="new_method",
+            question_id=session.problem_context.problem_id,
+            chapter=session.problem_context.chapter,
+            topic=None,
+            student_approach=student_approach,
+            router_primary_slot=bundle.router_primary_slot,
+            router_confidence=bundle.router_confidence,
+            selected_card_ids=bundle.selected_card_ids,
+            session_id=session.session_id,
+            notes=(
+                f"学生使用了新方法「{student_approach or '未知'}」，"
+                f"目录中无对应 slot，建议补充知识卡"
+            ),
+        )
+        try:
+            audit_store.append(entry)
+            self.logger.info(
+                f"[{session.session_id}] Emitted new_method audit: {student_approach}"
+            )
+        except Exception as exc:
+            self.logger.warning(f"Failed to emit new_method audit: {exc}")
 
     async def _create_plan(
         self,
