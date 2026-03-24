@@ -1,0 +1,30 @@
+card_id: card_hyperbola_geometric
+chapter: 解析几何
+title: 几何性质法（双曲线）
+summary: >
+  利用双曲线的几何性质（离心率、准线、对称性、实虚轴关系）
+  直接分析和求解问题，避免代数运算。
+general_methods:
+  - "离心率 e=c/a>1；e 越大双曲线越'扁'（张角越大）"
+  - "准线 x=±a²/c；焦点到准线距离 = a²/c−(−c) 或用焦准距 a/e"
+  - "实轴 2a、虚轴 2b、焦距 2c，关系 c²=a²+b²（注意和椭圆相反）"
+hints:
+  1: "双曲线的 a、b、c 之间是什么关系？和椭圆有什么不同？"
+  2: "离心率 e 的大小对双曲线的形状有什么影响？"
+  3: "c²=a²+b²（不是 a²−b²！），e=c/a>1，渐近线斜率 ±b/a=±√(e²−1)"
+common_mistakes:
+  - "c²=a²+b² 和椭圆的 c²=a²−b² 搞混"
+  - "求离心率时将 a、b 的大小关系弄反（双曲线中 a 不一定大于 b）"
+  - "焦点在 x 轴和 y 轴的标准方程形式混淆"
+prerequisite_card_ids: []
+problem_tags:
+  - 离心率
+  - 准线
+  - 几何性质
+  - 双曲线
+method_tags:
+  - 几何性质
+  - 离心率
+thinking_tags:
+  - 性质应用
+  - 数形结合

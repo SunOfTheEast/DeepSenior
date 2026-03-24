@@ -1,0 +1,45 @@
+version: "2026-03-24"
+chapter: 解析几何
+topic: 双曲线
+status: active
+methods:
+  - slot_id: hyperbola_set_and_solve
+    name: 设点联立法
+    trigger: 学生设点代入双曲线方程并联立方程组求解
+    card_ids:
+      - card_hyperbola_set_point
+      - card_hyperbola_elimination
+    cross_ref: []
+    status: active
+
+  - slot_id: hyperbola_asymptote
+    name: 渐近线法
+    trigger: 学生利用双曲线渐近线 y=±(b/a)x 构造方程或分析极限行为
+    card_ids:
+      - card_hyperbola_asymptote
+    cross_ref: []
+    status: active
+
+  - slot_id: hyperbola_focal_chord
+    name: 焦点弦法
+    trigger: 学生利用焦半径或焦点弦性质处理过焦点的弦问题
+    card_ids:
+      - card_hyperbola_focal_chord
+    cross_ref: []
+    status: active
+
+  - slot_id: hyperbola_definition_method
+    name: 定义法
+    trigger: 学生利用双曲线定义 ||PF₁|−|PF₂||=2a 或焦半径公式直接求解
+    card_ids:
+      - card_hyperbola_definition
+    cross_ref: []
+    status: active
+
+  - slot_id: hyperbola_geometric_property
+    name: 几何性质法
+    trigger: 利用双曲线对称性、离心率、准线等几何性质直接推理
+    card_ids:
+      - card_hyperbola_geometric
+    cross_ref: []
+    status: active

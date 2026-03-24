@@ -1,0 +1,32 @@
+card_id: card_derivative_zero_count
+chapter: 导数
+title: 零点分析法
+summary: >
+  利用导数分析函数的单调性和极值，结合零点存在定理（介值定理）
+  确定方程 f(x)=0 根的个数或函数零点个数。
+general_methods:
+  - "求导分析单调性和极值，画出函数大致图像"
+  - "利用极值点的函数值符号判断零点个数：极大值>0 且极小值<0 → 3 个零点"
+  - "含参数时，令极值=0 求参数临界值，分段讨论"
+hints:
+  1: "先求导分析函数的增减和极值，能画出大致图像吗？"
+  2: "极值点的函数值是正还是负？这决定了零点个数"
+  3: "算出极大值 f(x₁) 和极小值 f(x₂)，根据它们的符号判断图像与 x 轴的交点数"
+common_mistakes:
+  - "只判断了极值点个数却未计算极值的正负（极值点≠零点）"
+  - "忽略函数在无穷远处的行为（lim x→±∞）"
+  - "含参讨论时遗漏极值恰好等于零的临界情况"
+prerequisite_card_ids:
+  - card_derivative_monotonicity
+  - card_derivative_extremum
+problem_tags:
+  - 零点
+  - 方程根
+  - 根的个数
+  - 导数
+method_tags:
+  - 零点分析
+  - 图像法
+thinking_tags:
+  - 数形结合
+  - 分类讨论

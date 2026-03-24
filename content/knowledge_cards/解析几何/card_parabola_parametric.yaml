@@ -1,0 +1,30 @@
+card_id: card_parabola_parametric
+chapter: 解析几何
+title: 参数化设点法（抛物线）
+summary: >
+  利用 y²=2px 的参数化表示 P(t²/(2p), t) 或 P(2pt², 2pt) 设点，
+  将抛物线上的运算转化为对单参数 t 的代数运算。
+general_methods:
+  - "设抛物线 y²=2px 上的点为 (y²/(2p), y)，以 y 为参数"
+  - "或令 y=2pt，则 x=2pt²，以 t 为参数"
+  - "两点的中点、斜率等均可用参数表示，简化韦达定理的使用"
+hints:
+  1: "能不能直接用 y 作为参数来表示抛物线上的点？"
+  2: "设点为 (y₁²/(2p), y₁) 后，斜率和中点怎么用 y₁、y₂ 表示？"
+  3: "两点斜率 k=(y₁−y₂)/(y₁²−y₂²)·2p = 2p/(y₁+y₂)，非常简洁"
+common_mistakes:
+  - "参数化时 x 和 y 的对应关系搞错"
+  - "忘记参数化后仍需检验判别式条件"
+  - "两种参数化形式混用导致计算错误"
+prerequisite_card_ids: []
+problem_tags:
+  - 参数方程
+  - 中点
+  - 斜率
+  - 抛物线
+method_tags:
+  - 参数化
+  - 设点法
+thinking_tags:
+  - 参数思想
+  - 化简思想

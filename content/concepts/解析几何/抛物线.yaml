@@ -1,0 +1,72 @@
+chapter: 解析几何
+topic: 抛物线
+version: "2026-03-24"
+
+concepts:
+  - concept_id: concept_parabola_definition
+    name: 抛物线的定义与标准方程
+    difficulty: 1
+    prerequisites: []
+    related_slots:
+      - parabola_definition_method
+      - parabola_set_and_solve
+    related_card_ids:
+      - card_parabola_definition
+      - card_parabola_set_point
+    description: >
+      抛物线的定义（到焦点距离等于到准线距离）、四种标准方程（y²=2px 等）、
+      焦点坐标、准线方程、p 的几何意义。
+
+  - concept_id: concept_parabola_properties
+    name: 抛物线的几何性质
+    difficulty: 1
+    prerequisites:
+      - concept_parabola_definition
+    related_slots:
+      - parabola_focal_chord
+      - parabola_reflection
+    related_card_ids:
+      - card_parabola_focal_chord
+      - card_parabola_reflection
+    description: >
+      焦半径公式、通径、光学反射性质、抛物线的对称性、
+      开口方向与参数 p 的关系。
+
+  - concept_id: concept_line_parabola_intersection
+    name: 直线与抛物线的位置关系
+    difficulty: 2
+    prerequisites:
+      - concept_parabola_definition
+    related_slots:
+      - parabola_set_and_solve
+    related_card_ids:
+      - card_parabola_set_point
+    description: >
+      联立方程组消元、设直线 x=my+n 的优势、韦达定理应用、
+      弦长公式、中点坐标。
+
+  - concept_id: concept_parabola_focal_chord
+    name: 抛物线焦点弦
+    difficulty: 2
+    prerequisites:
+      - concept_parabola_properties
+    related_slots:
+      - parabola_focal_chord
+    related_card_ids:
+      - card_parabola_focal_chord
+    description: >
+      过焦点弦的特殊性质（y₁y₂=−p²、焦点弦长公式、
+      以焦点弦为直径的圆与准线相切等经典结论）。
+
+  - concept_id: concept_parabola_parametric
+    name: 抛物线参数化方法
+    difficulty: 2
+    prerequisites:
+      - concept_parabola_definition
+    related_slots:
+      - parabola_parametric
+    related_card_ids:
+      - card_parabola_parametric
+    description: >
+      以 y 或 t 为参数设抛物线上的点，简化联立计算，
+      适用于斜率、中点、面积等问题。

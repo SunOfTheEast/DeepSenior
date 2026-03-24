@@ -1,0 +1,96 @@
+chapter: 导数
+topic: 导数应用
+version: "2026-03-24"
+
+concepts:
+  - concept_id: concept_derivative_basic
+    name: 导数的概念与运算
+    difficulty: 1
+    prerequisites: []
+    related_slots:
+      - derivative_monotonicity
+      - derivative_tangent_line
+    related_card_ids:
+      - card_derivative_monotonicity
+      - card_derivative_tangent
+    description: >
+      导数的定义（极限定义与几何意义）、基本求导法则（和差积商）、
+      复合函数求导（链式法则）、常见函数的导数公式。
+
+  - concept_id: concept_monotonicity_analysis
+    name: 利用导数研究单调性
+    difficulty: 1
+    prerequisites:
+      - concept_derivative_basic
+    related_slots:
+      - derivative_monotonicity
+    related_card_ids:
+      - card_derivative_monotonicity
+    description: >
+      f'(x)>0 → 递增、f'(x)<0 → 递减的判断方法，
+      导数为零的驻点分析，符号表法。
+
+  - concept_id: concept_extremum_and_max
+    name: 极值与最值
+    difficulty: 2
+    prerequisites:
+      - concept_monotonicity_analysis
+    related_slots:
+      - derivative_extremum
+    related_card_ids:
+      - card_derivative_extremum
+    description: >
+      极值的定义和判断（一阶导数变号法、二阶导数法），
+      闭区间上最值的求法（极值点+端点比较），开区间最值问题。
+
+  - concept_id: concept_tangent_problems
+    name: 切线问题
+    difficulty: 2
+    prerequisites:
+      - concept_derivative_basic
+    related_slots:
+      - derivative_tangent_line
+    related_card_ids:
+      - card_derivative_tangent
+    description: >
+      在某点处的切线 vs 过某点的切线的区别，
+      公切线问题，切线方程与曲线交点问题。
+
+  - concept_id: concept_zero_point_analysis
+    name: 零点与方程根
+    difficulty: 2
+    prerequisites:
+      - concept_extremum_and_max
+    related_slots:
+      - derivative_zero_count
+    related_card_ids:
+      - card_derivative_zero_count
+    description: >
+      利用单调性和极值分析零点个数，含参方程的根的个数讨论，
+      零点存在定理（介值定理）的应用。
+
+  - concept_id: concept_inequality_proof
+    name: 利用导数证明不等式
+    difficulty: 3
+    prerequisites:
+      - concept_extremum_and_max
+    related_slots:
+      - derivative_inequality
+    related_card_ids:
+      - card_derivative_inequality
+    description: >
+      构造辅助函数法、放缩法与导数结合、恒成立问题的参数分离，
+      是高考导数压轴题的核心考法。
+
+  - concept_id: concept_parameter_discussion
+    name: 含参导数的分类讨论
+    difficulty: 3
+    prerequisites:
+      - concept_monotonicity_analysis
+    related_slots:
+      - derivative_parameter_discussion
+    related_card_ids:
+      - card_derivative_parameter
+    description: >
+      参数对导数零点结构的影响、分离参数法、
+      恒成立/能成立问题的转化与求解。

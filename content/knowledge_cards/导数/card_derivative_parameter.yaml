@@ -1,0 +1,31 @@
+card_id: card_derivative_parameter
+chapter: 导数
+title: 含参讨论法
+summary: >
+  含参数的导数问题需要对参数取值进行分类讨论，
+  确定导数零点的位置和个数如何随参数变化，从而确定函数的单调性和极值。
+general_methods:
+  - "求导后分析 f'(x)=0 的根如何依赖参数 a"
+  - "按参数取值分区间讨论：如 a>0, a=0, a<0 导致 f'(x) 的零点结构不同"
+  - "恒成立问题：f'(x)≥0 恒成立 ⟺ 参数满足某不等式（分离参数或求最值）"
+hints:
+  1: "导数中含参数，参数取不同值时导数的零点有什么变化？"
+  2: "试着把参数从导数中分离出来，能得到什么？"
+  3: "将 f'(x)≥0 中的参数 a 分离：a≥g(x) 或 a≤g(x)，再求 g(x) 的最值"
+common_mistakes:
+  - "分类讨论不完整，遗漏参数的临界值（如 a=0 或二次项系数为零的情况）"
+  - "分离参数时忘记讨论分母为零的情况"
+  - "恒成立条件搞反（f(x)≥a 恒成立 ⟺ a≤f(x)_min，不是 f(x)_max）"
+prerequisite_card_ids:
+  - card_derivative_monotonicity
+problem_tags:
+  - 含参讨论
+  - 恒成立
+  - 参数范围
+  - 导数
+method_tags:
+  - 分类讨论
+  - 分离参数
+thinking_tags:
+  - 分类讨论
+  - 转化思想

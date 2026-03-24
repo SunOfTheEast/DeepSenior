@@ -1,0 +1,45 @@
+version: "2026-03-24"
+chapter: 解析几何
+topic: 抛物线
+status: active
+methods:
+  - slot_id: parabola_set_and_solve
+    name: 设点联立法
+    trigger: 学生设点代入抛物线方程并联立方程组求解
+    card_ids:
+      - card_parabola_set_point
+    cross_ref: []
+    status: active
+
+  - slot_id: parabola_focal_chord
+    name: 焦点弦法
+    trigger: 学生利用焦半径或焦点弦性质处理过焦点的弦问题
+    card_ids:
+      - card_parabola_focal_chord
+    cross_ref: []
+    status: active
+
+  - slot_id: parabola_definition_method
+    name: 定义法（焦准距）
+    trigger: 学生利用抛物线定义（到焦点距离=到准线距离）转化问题
+    card_ids:
+      - card_parabola_definition
+    cross_ref: []
+    status: active
+
+  - slot_id: parabola_parametric
+    name: 参数化设点法
+    trigger: 学生用 y=2pt 参数化设抛物线上的点
+    card_ids:
+      - card_parabola_parametric
+    cross_ref:
+      - trig_substitution
+    status: active
+
+  - slot_id: parabola_reflection
+    name: 光学反射/切线法
+    trigger: 利用抛物线反射性质或切线方程求解切线、法线相关问题
+    card_ids:
+      - card_parabola_reflection
+    cross_ref: []
+    status: active

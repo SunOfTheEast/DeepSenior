@@ -1,0 +1,31 @@
+card_id: card_derivative_inequality
+chapter: 导数
+title: 构造函数证不等式
+summary: >
+  将不等式转化为"构造辅助函数 g(x)，证明 g(x)≥0"的形式，
+  再利用导数分析 g(x) 的单调性和最值来完成证明。是导数压轴题的核心方法。
+general_methods:
+  - "移项构造：将不等式 f(x)≥h(x) 转化为 g(x)=f(x)−h(x)≥0"
+  - "求 g'(x)，分析单调性，找到 g(x) 的最小值点"
+  - "证明 g(x)_min ≥ 0 即完成证明"
+hints:
+  1: "能不能把不等式两边的东西移到同一边，构造一个新函数？"
+  2: "构造出 g(x) 后，怎么证它始终非负？"
+  3: "对 g(x) 求导找最小值点 x₀，计算 g(x₀)≥0 即可。若 g(x₀) 恰好=0，说明等号成立"
+common_mistakes:
+  - "构造的辅助函数不恰当，导致导数分析过于复杂"
+  - "只证了单调性但没有算出最小值"
+  - "等号成立条件漏写或验证不充分"
+prerequisite_card_ids:
+  - card_derivative_monotonicity
+  - card_derivative_extremum
+problem_tags:
+  - 不等式证明
+  - 恒成立
+  - 导数
+method_tags:
+  - 构造函数
+  - 不等式证明
+thinking_tags:
+  - 构造思想
+  - 转化思想

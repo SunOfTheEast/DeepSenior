@@ -1,0 +1,86 @@
+chapter: 解析几何
+topic: 双曲线
+version: "2026-03-24"
+
+concepts:
+  - concept_id: concept_hyperbola_definition
+    name: 双曲线的定义与标准方程
+    difficulty: 1
+    prerequisites: []
+    related_slots:
+      - hyperbola_definition_method
+      - hyperbola_set_and_solve
+    related_card_ids:
+      - card_hyperbola_definition
+      - card_hyperbola_set_point
+    description: >
+      双曲线的定义（到两焦点距离之差的绝对值为定值）、标准方程 x²/a²−y²/b²=1、
+      a/b/c 之间的关系（c²=a²+b²）、焦点坐标、实轴虚轴。
+
+  - concept_id: concept_hyperbola_properties
+    name: 双曲线的几何性质
+    difficulty: 1
+    prerequisites:
+      - concept_hyperbola_definition
+    related_slots:
+      - hyperbola_geometric_property
+      - hyperbola_asymptote
+    related_card_ids:
+      - card_hyperbola_geometric
+      - card_hyperbola_asymptote
+    description: >
+      离心率 e=c/a>1、渐近线 y=±(b/a)x、准线、对称性、
+      等轴双曲线（a=b）的特殊性质。
+
+  - concept_id: concept_hyperbola_asymptote
+    name: 双曲线渐近线
+    difficulty: 2
+    prerequisites:
+      - concept_hyperbola_properties
+    related_slots:
+      - hyperbola_asymptote
+    related_card_ids:
+      - card_hyperbola_asymptote
+    description: >
+      渐近线方程的推导与应用、共渐近线系方程 x²/a²−y²/b²=λ、
+      点到渐近线的距离、渐近线与直线交点问题。
+
+  - concept_id: concept_line_hyperbola_intersection
+    name: 直线与双曲线的位置关系
+    difficulty: 2
+    prerequisites:
+      - concept_hyperbola_definition
+    related_slots:
+      - hyperbola_set_and_solve
+    related_card_ids:
+      - card_hyperbola_set_point
+      - card_hyperbola_elimination
+    description: >
+      联立方程组判断交点个数、二次项系数为零的退化情况（平行于渐近线）、
+      交点所在支的判断、弦长公式与韦达定理的应用。
+
+  - concept_id: concept_hyperbola_focal_chord
+    name: 焦点弦与焦半径
+    difficulty: 2
+    prerequisites:
+      - concept_hyperbola_properties
+    related_slots:
+      - hyperbola_focal_chord
+    related_card_ids:
+      - card_hyperbola_focal_chord
+    description: >
+      焦半径公式（右支 PF₁=a+ex, PF₂=ex−a）、焦点弦长公式、
+      焦点三角形面积公式、与椭圆焦半径公式的区别。
+
+  - concept_id: concept_hyperbola_elimination
+    name: 双曲线联立消元技巧
+    difficulty: 3
+    prerequisites:
+      - concept_line_hyperbola_intersection
+    related_slots:
+      - hyperbola_set_and_solve
+    related_card_ids:
+      - card_hyperbola_elimination
+    description: >
+      设而不求、齐次化、渐近线退化的分类讨论等高级运算技巧，
+      以及双曲线特有的"两支判断"问题的处理策略。

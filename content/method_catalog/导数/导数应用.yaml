@@ -1,0 +1,52 @@
+version: "2026-03-24"
+chapter: 导数
+topic: 导数应用
+status: active
+methods:
+  - slot_id: derivative_monotonicity
+    name: 单调性分析法
+    trigger: 学生求导后分析导数符号判断函数单调区间
+    card_ids:
+      - card_derivative_monotonicity
+    cross_ref: []
+    status: active
+
+  - slot_id: derivative_extremum
+    name: 极值与最值法
+    trigger: 学生令导数为零求极值点，再比较端点值求最值
+    card_ids:
+      - card_derivative_extremum
+    cross_ref: []
+    status: active
+
+  - slot_id: derivative_inequality
+    name: 构造函数证不等式
+    trigger: 学生构造辅助函数并利用单调性证明不等式
+    card_ids:
+      - card_derivative_inequality
+    cross_ref: []
+    status: active
+
+  - slot_id: derivative_zero_count
+    name: 零点分析法
+    trigger: 学生分析函数零点个数或方程根的个数
+    card_ids:
+      - card_derivative_zero_count
+    cross_ref: []
+    status: active
+
+  - slot_id: derivative_tangent_line
+    name: 切线问题法
+    trigger: 学生求曲线的切线方程或利用切线性质求解
+    card_ids:
+      - card_derivative_tangent
+    cross_ref: []
+    status: active
+
+  - slot_id: derivative_parameter_discussion
+    name: 含参讨论法
+    trigger: 学生对含参数的导函数进行分类讨论
+    card_ids:
+      - card_derivative_parameter
+    cross_ref: []
+    status: active

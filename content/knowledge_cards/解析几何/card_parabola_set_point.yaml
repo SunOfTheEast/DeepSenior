@@ -1,0 +1,31 @@
+card_id: card_parabola_set_point
+chapter: 解析几何
+title: 设点联立法（抛物线）
+summary: >
+  设直线与抛物线 y²=2px 的交点坐标，联立方程组消元，
+  利用韦达定理建立两根之间的关系。抛物线的联立比椭圆/双曲线简单，因为只有一个二次项。
+general_methods:
+  - "设直线 x=my+n（推荐优先消 x），代入 y²=2px 得关于 y 的一元二次方程"
+  - "韦达定理：y₁+y₂ = 2pm, y₁y₂ = −2pn"
+  - "弦长公式：|AB|=√(1+1/m²)·|y₁−y₂|，或利用焦点弦公式"
+hints:
+  1: "抛物线只有 y² 项，用 x=my+n 设直线会不会更简洁？"
+  2: "代入后整理成关于 y 的方程，韦达定理能给什么？"
+  3: "x=my+n 代入 y²=2px 得 y²−2pmy−2pn=0，韦达定理直接可用"
+common_mistakes:
+  - "用 y=kx+b 设直线时忘记讨论斜率不存在（x=常数）的情况"
+  - "弦长公式中用错变量（应和消元后的主变量一致）"
+  - "忘记 p>0 的约束条件"
+prerequisite_card_ids: []
+problem_tags:
+  - 弦长
+  - 面积
+  - 中点
+  - 韦达定理
+  - 抛物线
+method_tags:
+  - 设点联立
+  - 韦达定理
+thinking_tags:
+  - 方程思想
+  - 整体思想

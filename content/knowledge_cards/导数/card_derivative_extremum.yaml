@@ -1,0 +1,30 @@
+card_id: card_derivative_extremum
+chapter: 导数
+title: 极值与最值法
+summary: >
+  利用导数求函数的极大值、极小值，再结合端点值比较得到闭区间上的最大值和最小值。
+  是高考导数大题的核心考点。
+general_methods:
+  - "极值：f'(x₀)=0 且 f'(x) 在 x₀ 两侧变号 → x₀ 是极值点"
+  - "极大值：f'(x) 由正变负；极小值：f'(x) 由负变正"
+  - "闭区间最值：比较所有极值和两端点的函数值，取最大/最小"
+hints:
+  1: "f'(x)=0 的点一定是极值点吗？还需要什么条件？"
+  2: "极值和最值有什么区别？闭区间上怎么求最值？"
+  3: "f'(x₀)=0 只是必要条件，还需 f'(x) 在 x₀ 两侧变号。最值要和端点值比较"
+common_mistakes:
+  - "f'(x₀)=0 不一定是极值点（如 f(x)=x³ 在 x=0 处）"
+  - "开区间上可能无最值（极值不等于最值）"
+  - "闭区间最值只比较了极值点而忘记比较端点"
+prerequisite_card_ids:
+  - card_derivative_monotonicity
+problem_tags:
+  - 极值
+  - 最值
+  - 导数
+method_tags:
+  - 极值判断
+  - 端点比较
+thinking_tags:
+  - 分析思想
+  - 全局思维
