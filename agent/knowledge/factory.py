@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .audit_store import AuditStore
 from .card_index import CardIndexBase, NullCardIndex, SimpleCardIndex
 from .card_retriever import CardRetriever
 from .card_store import CardStoreBase, FileCardStore, NullCardStore
@@ -81,4 +82,5 @@ def build_card_retriever(
         card_index=card_index,
         method_router=method_router,
         card_selector=card_selector,
+        audit_store=AuditStore(),
     )

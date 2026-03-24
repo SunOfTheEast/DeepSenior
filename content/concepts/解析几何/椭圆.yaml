@@ -1,0 +1,88 @@
+chapter: 解析几何
+topic: 椭圆
+version: "2026-03-24"
+
+concepts:
+  - concept_id: concept_ellipse_definition
+    name: 椭圆的定义与标准方程
+    difficulty: 1
+    prerequisites: []
+    related_slots:
+      - ellipse_set_and_solve
+      - ellipse_geometric_property
+    related_card_ids:
+      - card_ellipse_set_point
+      - card_ellipse_geometric
+    description: >
+      椭圆的定义（到两焦点距离之和为定值）、标准方程 x²/a²+y²/b²=1 的推导、
+      a/b/c 之间的关系（c²=a²-b²）、焦点坐标。
+
+  - concept_id: concept_ellipse_properties
+    name: 椭圆的几何性质
+    difficulty: 1
+    prerequisites:
+      - concept_ellipse_definition
+    related_slots:
+      - ellipse_geometric_property
+      - ellipse_focal_chord
+    related_card_ids:
+      - card_ellipse_geometric
+      - card_ellipse_focal_chord
+    description: >
+      离心率、通径、焦半径公式、对称性、光学反射性质等。
+
+  - concept_id: concept_line_conic_intersection
+    name: 直线与椭圆的位置关系
+    difficulty: 2
+    prerequisites:
+      - concept_ellipse_definition
+    related_slots:
+      - ellipse_set_and_solve
+    related_card_ids:
+      - card_ellipse_set_point
+      - card_ellipse_elimination
+    description: >
+      联立方程组判断交点个数（判别式）、弦长公式、中点坐标、
+      韦达定理在直线与椭圆问题中的应用。
+
+  - concept_id: concept_parametric_approach
+    name: 椭圆参数化方法
+    difficulty: 2
+    prerequisites:
+      - concept_ellipse_definition
+    related_slots:
+      - ellipse_parametric
+    related_card_ids:
+      - card_ellipse_parametric
+      - card_ellipse_parameter_relation
+    description: >
+      利用参数方程 x=a·cosθ, y=b·sinθ 设点的方法论，
+      适用于最值、面积、特殊弦等问题。
+
+  - concept_id: concept_focal_chord
+    name: 焦点弦与焦半径
+    difficulty: 2
+    prerequisites:
+      - concept_ellipse_properties
+    related_slots:
+      - ellipse_focal_chord
+      - ellipse_polar
+    related_card_ids:
+      - card_ellipse_focal_chord
+      - card_ellipse_polar
+    description: >
+      过焦点的弦的特殊性质，焦半径公式的应用，
+      焦点极坐标方程 ρ=b²/a/(1-e·cosθ) 的使用。
+
+  - concept_id: concept_elimination_techniques
+    name: 联立消元技巧
+    difficulty: 3
+    prerequisites:
+      - concept_line_conic_intersection
+    related_slots:
+      - ellipse_set_and_solve
+    related_card_ids:
+      - card_ellipse_elimination
+    description: >
+      设而不求、齐次化、优先消元方向选择等高级运算技巧，
+      用于降低联立消元的计算复杂度。

@@ -38,12 +38,14 @@ class CardRetriever:
         card_index: CardIndexBase | None = None,
         method_router=None,
         card_selector=None,
+        audit_store=None,
     ):
         self.method_catalog = method_catalog
         self.card_store = card_store or NullCardStore()
         self.card_index = card_index or NullCardIndex()
         self.method_router = method_router
         self.card_selector = card_selector
+        self.audit_store = audit_store
         self.logger = get_logger("Knowledge.CardRetriever")
 
     async def retrieve(self, request: CardRetrieveRequest) -> RetrievalBundle:
@@ -182,6 +184,11 @@ class CardRetriever:
                 f"[{request.session_id or '?'}] audit entries: "
                 f"{[e.task_type for e in audit_entries]}"
             )
+            if self.audit_store:
+                try:
+                    self.audit_store.append(audit_entries)
+                except Exception as exc:
+                    self.logger.warning(f"Failed to persist audit entries: {exc}")
         return RetrievalBundle(
             request=request,
             result=result,

@@ -393,6 +393,19 @@ class MemoryManager:
                 now=now,
             )
 
+        # Slot mastery（双层 mastery 的方法维度）
+        if episode.method_slot_matched:
+            from .data_structures import MethodSlotMastery
+            slot_id = episode.method_slot_matched
+            sm = semantic.slot_mastery.get(slot_id)
+            if sm is None:
+                sm = MethodSlotMastery(slot_id=slot_id)
+                semantic.slot_mastery[slot_id] = sm
+            sm.use_count += 1
+            sm.last_used_at = now
+            if episode.outcome == "solved":
+                sm.success_count += 1
+
         # Method observations（保留最近 20 条）
         for method, obs in update.method_observations.items():
             history = semantic.method_observations.setdefault(method, [])

@@ -124,5 +124,5 @@
 | **RAG B/C** | **knowledge 子系统骨架 + 方法目录 + CardStore** | **✅ 骨架完成** |
 | **RAG F** | **MethodRouter + CardSelector + Planner 接入** | **✅ Planner 接入完成** |
 | **RAG F 剩余** | **Review / Recommend / Memory 接入 + 知识卡内容 + FileCardStore** | **✅ 2026-03-24** |
-| **RAG D/E** | **concept 壳 + rag_audit_task 持久化 + 双层 mastery** | **🔲 未开始** |
+| **RAG D/E** | **concept 壳 + rag_audit_task 持久化 + 双层 mastery** | **✅ 2026-03-24** |
 | **RAG G/H** | **完整 concept registry + 运营闭环** | **🔲 未开始** |

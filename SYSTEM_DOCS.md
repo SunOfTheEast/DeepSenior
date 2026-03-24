@@ -1,6 +1,6 @@
 # DeepTutor 系统文档（重写版）
 
-> 更新时间：2026-03-23（Context Governance Layer 全量完成 + 代码索引行号全量校准 + 方法计数修正 + 幽灵方法清理）
+> 更新时间：2026-03-24（RAG 二阶段知识卡检索全链路接入 + ConceptRegistry + AuditStore + 双层 mastery）
 > 审计范围：`agent/**/*.py`（Tutor / Review / Memory / Recommend / Progress）
 > 文档目标：用"当前真实代码行为"描述系统，不混入未落地设计
 
@@ -33,9 +33,11 @@ DeepTutor 的核心目标是形成一个可闭环的学习系统：
 
 当前明确边界：
 
-1. 已实现"替代方法索引缺失 -> 审计任务入队"。
-2. 未实现"后台 RAG Worker 自动消费审计任务"。
-3. 因此，`question -> solution -> card` 的自动补索引仍是半自动状态。
+1. 已实现二阶段 RAG 知识卡检索（MethodRouter → CardSelector → 消费方）。
+2. 已实现审计任务持久化（`AuditStore` JSONL 追加 + 查询/统计接口）。
+3. 已实现 ConceptRegistry 概念节点注册（YAML 加载 + 前置依赖 BFS 展开）。
+4. 已实现双层 mastery（concept 维度 + method_slot 维度）。
+5. 未实现"后台 RAG Worker 自动消费审计任务 → 运营闭环"（Phase G/H）。
 
 ---
 
@@ -45,7 +47,8 @@ DeepTutor 的核心目标是形成一个可闭环的学习系统：
 |---|---|---|---|
 | Tutor | 提交判题、苏格拉底推进、意图路由、深问子流程 | `TutorSession` | `export_session()` |
 | Review | 错误回放、多解法演示、两阶段理解验证、重试信号 | `ReviewSession` | `close_session()/export_session()` |
-| Memory | 情节记忆入库、语义蒸馏、concept/solution 熟练度更新、审计任务落盘 | `SemanticMemory` + Episodic files | `get_semantic()/get_student_context()` |
+| Knowledge | 二阶段 RAG 知识卡检索、概念注册、审计持久化 | `ConceptRegistry` + `AuditStore` | `CardRetrieveResult` / `RagAuditEntry` |
+| Memory | 情节记忆入库、语义蒸馏、concept/solution/slot 三维度熟练度更新 | `SemanticMemory` + Episodic files | `get_semantic()/get_student_context()` |
 | Recommend | 结合 session + memory 决策推荐类型，并查题库或降级 | 无长驻会话 | `Recommendation` |
 | Progress | 遗忘曲线驱动计划 + 阶段总结 + next_review_at 回写 | 无长驻会话 | `TaskPlan` / `ProgressSummary` |
 
@@ -119,8 +122,9 @@ unified 关键行为（当前代码）：
 
 1. `concept_mastery[concept_id]`：Progress 直接消费。
 2. `solution_mastery[solution_id]`：记录 question 下不同 solution 分叉掌握度。
-3. `pending_audit_tasks[]`：替代解法索引补齐任务池（当前仅入队，不自动消费）。
-4. `index_status`：`pending/ready/rejected`，决定是否允许 solution->concept bridge。
+3. `slot_mastery[slot_id]`：`MethodSlotMastery`（use_count / success_count / success_rate / last_used_at），记录标准化方法 slot 维度的掌握度。由 `episode.method_slot_matched` 自动驱动。
+4. `pending_audit_tasks[]`：替代解法索引补齐任务池。审计条目同步持久化到 `AuditStore`（JSONL）。
+5. `index_status`：`pending/ready/rejected`，决定是否允许 solution->concept bridge。
 
 ### 3.5 PathEvaluationResult
 
@@ -712,6 +716,9 @@ commit_session(student_id, episode, run_distillation=True)
        │    │    └─ _bridge_solution_delta_to_concepts(semantic, linked, delta, already_updated)
        │    │         └─ bridge_delta = clamp(solution_delta * 0.4, ±0.06)
        │    │
+       │    ├─ [episode.method_slot_matched?]
+       │    │    └─ slot_mastery[slot_id]: use_count++, [solved?] success_count++
+       │    │
        │    ├─ update.method_observations → semantic.method_observations（保留最近20条）
        │    ├─ update.new_error_types → semantic.persistent_errors++
        │    └─ update.profile_summary / recent_focus → semantic 覆写
@@ -1069,12 +1076,12 @@ ActionClassifier 同时接收：
 | Memory/Progress/Recommend 投影 | MemoryDistiller / ProgressSummary / TaskPlanner / Recommend 全部接入 assembler + 任务快照 | P1 | ✅ 已实现 |
 | Projection Registry | `projection_registry.py` 定义 7 类 Agent 的 projection 协议（允许字段/可空/降级/版本号） | P1 | ✅ 已实现 |
 | 决策型 prompt 精简 | `task_planner_agent.yaml` / `recommend_agent.yaml` system + template 压缩；`planner` / `path_evaluator` 已满足标准 | P1 | ✅ 已实现 |
-| 调用方侧截取 | 统一在 TutorManager 侧截取后传入，Agent 不再接收全量 history | P1 | 待实现 |
-| content 截断 | history content 截取前 150 字，避免长回复膨胀 prompt | P1 | 待实现 |
-| passed_history 精简 | 只传"已通过: 1,2,3"，不传完整 description | P2 | 待实现 |
+| 调用方侧截取 | TutorManager `_get_recent_history()` 统一截取 `[-6:]` + 150 字 | P1 | ✅ 已实现 |
+| content 截断 | `_format_history` / `_fmt_rich_history` 中 content 截取前 150 字 | P1 | ✅ 已实现 |
+| passed_history 精简 | `_build_passed_history` 改为紧凑格式 `已通过: 1.xxx 2.xxx` | P2 | ✅ 已实现 |
 | 滑动窗口+摘要 | 超过 N 轮后，将早期对话压缩为一句摘要，保留最近 3-4 轮原文 | P2 | 待实现 |
 | 消除 ActionClassifier 冗余 | session_context 已改为 key-value，与 history metadata 的重叠已大幅减少 | P2 | 部分完成 |
-| 替代解法知识卡检索 | Planner 在替代方法场景下拿到的 hints 与规划目标错位，需引入 RAG 检索补充卡片 | P1 | 待实现（Phase F） |
+| 替代解法知识卡检索 | 二阶段 RAG（MethodRouter → CardSelector）为 Planner/Review/Recommend 补充卡片 | P1 | ✅ 已实现 |
 
 > 完整的上下文优化方案详见 [`AGENT_CONTEXT_OPTIMIZATION_DESIGN.md`](./doc/context/AGENT_CONTEXT_OPTIMIZATION_DESIGN.md)（含 Phase 0-5 实施计划、Context Governance Layer、知识卡 RAG 检索设计、评审备注）。
 
@@ -1115,6 +1122,58 @@ ActionClassifier 同时接收：
 
 旧 helper（`get_hints_summary()` 等）保留兼容，新代码一律使用预算版。
 
+#### 5.12.7 Knowledge 子系统（二阶段 RAG 知识卡检索）（2026-03-24 新增）
+
+位置：`agent/knowledge/`
+
+**整体架构**：
+
+```text
+TutorManager / ReviewChatManager / RecommendManager
+  ↓ CardRetriever.retrieve(request)
+  ├─ Stage 1: MethodRouterAgent — 从 method_catalog 选 slot
+  ├─ Stage 2: CardSelectorAgent — 从候选卡片中选最终卡
+  ├─ audit_entries 自动持久化到 AuditStore (JSONL)
+  └─ 返回 CardRetrieveResult (retrieved_cards + audit_entries)
+```
+
+| 模块 | 职责 |
+|---|---|
+| `card_retriever.py` | 编排 MethodRouter → CardSelector 两阶段管线，收集审计条目 |
+| `card_store.py` | `FileCardStore` — 从 `content/knowledge_cards/` 加载 `PublishedKnowledgeCard` |
+| `card_index.py` | `MethodCardIndex` — 维护 slot→card 倒排索引 |
+| `method_catalog.py` | `MethodCatalog` — 加载 `content/method_catalog/` 的方法目录 |
+| `concept_registry.py` | `ConceptRegistry` — 从 `content/concepts/` 加载概念节点，支持前置依赖 BFS 展开 |
+| `audit_store.py` | `AuditStore` — JSONL 追加持久化 `RagAuditEntry`，支持 query/stats |
+| `factory.py` | `build_card_retriever()` — 组装 CardRetriever 实例（含 AuditStore） |
+| `agents/method_router_agent.py` | Stage 1: 根据题目 + 学生方法从 method_catalog 选 slot |
+| `agents/card_selector_agent.py` | Stage 2: 从候选卡片中选最终卡片 |
+
+**消费方接入**：
+
+| 消费方 | 触发条件 | 使用方式 |
+|---|---|---|
+| Planner | ACCEPT / ACCEPT_WITH_FLAG | `supplementary_cards` 注入规划上下文 |
+| Review `explain_concept` | 用户请求概念解释 | 检索相关卡片作为解释素材 |
+| Recommend | REVIEW_CONCEPT 推荐类型 | 检索薄弱方法对应卡片，判断素材覆盖度 |
+
+**ConceptRegistry 概念节点**（`content/concepts/<chapter>/<topic>.yaml`）：
+
+| 字段 | 说明 |
+|---|---|
+| `concept_id` | 唯一标识（如 `concept_ellipse_definition`） |
+| `name` / `chapter` / `topic` | 基本信息 |
+| `difficulty` | 1-3 难度等级 |
+| `prerequisites` | 前置概念 ID 列表（支持 BFS 展开） |
+| `related_slots` | 关联方法 slot ID |
+| `related_card_ids` | 关联知识卡 ID |
+
+**双层 mastery**：
+
+- `concept_mastery[concept_id]` — `MasteryRecord`，由 MemoryDistiller LLM 驱动。
+- `slot_mastery[slot_id]` — `MethodSlotMastery`，由 `episode.method_slot_matched` 自动驱动（use_count / success_count / success_rate）。
+- `SemanticMemory.get_weak_slots(threshold)` / `get_strong_slots(threshold)` 查询方法维度薄弱/掌握良好的 slot。
+
 ---
 
 ## 6. Skill Registry 与 Agent 映射
@@ -1133,6 +1192,7 @@ ActionClassifier 同时接收：
 | `evaluate_checkpoint` | `RouterAgent` | `.evaluate_checkpoint()` | LLM |
 | `route_decision` | `RouterAgent` | `.decide_after_grading()` | 规则（wrapped async） |
 | `classify_action` | `TutorActionClassifierAgent` | `.classify_action()` | LLM |
+| `retrieve_cards` | `CardRetriever` | `.retrieve()` | LLM（二阶段 RAG） |
 
 ### 6.2 Review SkillRegistry
 
@@ -1341,7 +1401,7 @@ ActionClassifier 同时接收：
 
 未覆盖——业务语义：
 
-8. 后台自动 RAG 索引与审计闭环（`pending_audit_tasks` 仅入队不消费）。
+8. ~~后台自动 RAG 索引与审计闭环~~ → 2026-03-24 部分完成：`AuditStore` JSONL 持久化 + query/stats 已实现；自动消费→运营闭环待 Phase G/H。
 9. 深问学习结果未写入 EpisodicMemory（`build_episodic_from_tutor` 忽略 `deep_dive_*` 字段）。
 10. 学生连续空白提交的循环保护（无 `blank_attempt_count` 限制）。
 11. `level=0` 知识点在 Ebbinghaus 中的死角处理。
@@ -1368,9 +1428,9 @@ ActionClassifier 同时接收：
 - [x] **Tutor 完成后 mode 未重置**（2026-03-21 修复）。
   - `_handle_all_checkpoints_done()` 和 `_handle_correct()` 在设 `status="solved"` 同时设 `session.mode = TutorMode.IDLE`。
 
-- [ ] 后台 RAG Worker 未实现。
-  - 现状：`pending_audit_tasks` 已入队，但无自动消费、检索、审计单流转。
-  - 影响：替代方法索引补齐依赖人工流程。
+- [x] ~~后台 RAG Worker 未实现~~（2026-03-24 部分完成）。
+  - 已完成：`AuditStore` JSONL 持久化（`data/rag_audit/entries.jsonl`）、`query()`/`stats()` 查询接口、CardRetriever 自动写入。
+  - 剩余：自动消费审计任务 → 目录补充 → 自动生效的运营闭环（Phase G/H）。
 
 ### P1（中优先）
 
@@ -1552,7 +1612,18 @@ ActionClassifier 同时接收：
      - P2（4 项）：token 预算、输出校验、懒加载、硬耦合。
    - 原 8.3 教育业务边界覆盖度重编号为 8.4。
    - 9 TODO 新增：P1 +10 项，P2 +8 项（含上下文管理相关）。
-9. **Context Governance Layer 全量完成（Step 1-6）**（2026-03-23）：
+9. **RAG 二阶段知识卡检索 + Phase D/E**（2026-03-24）：
+   - 新建 `agent/knowledge/` 子系统：`CardRetriever`（二阶段管线）、`FileCardStore`（YAML 卡片加载）、`MethodCatalog`、`MethodCardIndex`、`ConceptRegistry`（概念节点 + BFS 前置依赖）、`AuditStore`（JSONL 持久化）。
+   - `MethodRouterAgent` + `CardSelectorAgent` 两阶段 LLM 检索。
+   - Tutor SkillRegistry 注册 `retrieve_cards`；TutorManager 在 ACCEPT/ACCEPT_WITH_FLAG 时触发 RAG。
+   - Planner 消费 `supplementary_cards`；Review `explain_concept` + Recommend `REVIEW_CONCEPT` 接入 CardRetriever。
+   - Memory：`EpisodicMemory` 新增 `method_slot_matched`；`SemanticMemory` 新增 `slot_mastery`（`MethodSlotMastery`）+ `get_weak_slots()`/`get_strong_slots()`。MemoryManager `_apply_update()` 自动更新 slot mastery。
+   - GraderAgent 新增 `_trim_student_work()`（800 字截断）。
+   - 椭圆 7 张知识卡（`content/knowledge_cards/解析几何/`）+ 6 个概念节点（`content/concepts/解析几何/椭圆.yaml`）。
+   - Phase 0 快赢项：content 截断 150 字、`_get_recent_history()` 统一 `[-6:]`、`_build_passed_history` 紧凑格式、请求级缓存、PathEvaluator 结果缓存。
+   - 1.0 边界说明更新；2.0 新增 Knowledge 模块行；3.4 新增 `slot_mastery` + `AuditStore`；5.12.7 新增 Knowledge 子系统章节。
+   - 6.1 新增 `retrieve_cards` skill；8.4 / 9.0 审计闭环状态更新；10.8 新增 Knowledge 模块代码索引。
+10. **Context Governance Layer 全量完成（Step 1-6）**（2026-03-23）：
    - **Step 1**: 新建 `agent/context_governance/` 模块（`budget_policy.py` / `assembler.py` / `signature.py` / `telemetry.py`）。`ContextAssemblyResult` 统一返回结构。`BudgetPolicy` 定义 7 套策略。
    - **Step 2**: `ProblemContext` 新增 4 个预算化 helper + slice hint 分离。
    - **Step 3**: Tutor Agent 投影改造 — Planner（`selected_methods` top-3 + `PLANNER_POLICY`）、PathEvaluator（`target_skills` + `alignment_constraints` + `PATH_EVALUATOR_POLICY`）、Grader（`intended_methods` / `common_mistakes` top-k + `GRADER_POLICY`）、TutorContextBuilder（k=v 格式）。Review Agent 投影改造 — MethodEnumerator（`card_titles` 替代 `knowledge_hints`）、MethodSolver（`method_guidance` 替代全量 hints+mistakes）。
@@ -1681,7 +1752,8 @@ ActionClassifier 同时接收：
 | `MemoryDistillerAgent` | [`agent/memory/agents/memory_distiller_agent.py`](./agent/memory/agents/memory_distiller_agent.py) | `:30` | LLM 语义蒸馏 |
 | `MemoryStore` | [`agent/memory/memory_store.py`](./agent/memory/memory_store.py) | `:31` | 持久化存储层 |
 | `EpisodicMemory` | [`agent/memory/data_structures.py`](./agent/memory/data_structures.py) | `:42` | 情节记忆 |
-| `SemanticMemory` | 同上 | `:187` | 语义画像（含 `to_distill_snapshot` / `to_progress_snapshot` / `to_recommend_snapshot` 任务快照） |
+| `SemanticMemory` | 同上 | `:187` | 语义画像（含 3 个任务快照 + `slot_mastery` 双层 mastery） |
+| `MethodSlotMastery` | 同上 | — | 方法 slot 维度掌握度（use_count / success_count / success_rate） |
 
 ### 10.6 Recommend 模块
 
@@ -1700,3 +1772,17 @@ ActionClassifier 同时接收：
 | `ProgressManager` | [`agent/progress/progress_manager.py`](./agent/progress/progress_manager.py) | `:30` | 计划与总结管理器 |
 | `TaskPlannerAgent` | [`agent/progress/agents/task_planner_agent.py`](./agent/progress/agents/task_planner_agent.py) | `:33` | 任务规划 Agent |
 | `ProgressSummaryAgent` | [`agent/progress/agents/progress_summary_agent.py`](./agent/progress/agents/progress_summary_agent.py) | `:24` | 阶段总结 Agent |
+
+### 10.8 Knowledge 模块
+
+| 组件 | 文件 | 说明 |
+|---|---|---|
+| `CardRetriever` | [`agent/knowledge/card_retriever.py`](./agent/knowledge/card_retriever.py) | 二阶段 RAG 管线编排（MethodRouter → CardSelector） |
+| `FileCardStore` | [`agent/knowledge/card_store.py`](./agent/knowledge/card_store.py) | YAML 文件加载 `PublishedKnowledgeCard` |
+| `MethodCardIndex` | [`agent/knowledge/card_index.py`](./agent/knowledge/card_index.py) | slot → card 倒排索引 |
+| `MethodCatalog` | [`agent/knowledge/method_catalog.py`](./agent/knowledge/method_catalog.py) | 方法目录加载（`content/method_catalog/`） |
+| `ConceptRegistry` | [`agent/knowledge/concept_registry.py`](./agent/knowledge/concept_registry.py) | 概念节点注册 + BFS 前置依赖展开 |
+| `AuditStore` | [`agent/knowledge/audit_store.py`](./agent/knowledge/audit_store.py) | JSONL 审计条目持久化 + query/stats |
+| `MethodRouterAgent` | [`agent/knowledge/agents/method_router_agent.py`](./agent/knowledge/agents/method_router_agent.py) | Stage 1: 选方法 slot |
+| `CardSelectorAgent` | [`agent/knowledge/agents/card_selector_agent.py`](./agent/knowledge/agents/card_selector_agent.py) | Stage 2: 选知识卡 |
+| `build_card_retriever()` | [`agent/knowledge/factory.py`](./agent/knowledge/factory.py) | 组装工厂（含 AuditStore 注入） |

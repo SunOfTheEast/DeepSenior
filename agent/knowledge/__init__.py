@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 """Knowledge layer skeleton for RAG v2."""
 
+from .audit_store import AuditStore
 from .card_index import CardIndexBase, NullCardIndex, SimpleCardIndex
 from .card_retriever import CardRetriever
 from .card_store import CardStoreBase, FileCardStore, InMemoryCardStore, NullCardStore
+from .concept_registry import ConceptNode, ConceptRegistry
 from .data_structures import (
     CandidateCardSummary,
     CardRetrieveRequest,
@@ -31,6 +33,7 @@ from .factory import build_card_retriever
 from .method_catalog import MethodCatalog
 
 __all__ = [
+    "AuditStore",
     "build_card_retriever",
     "CandidateCardSummary",
     "CardIndexBase",
@@ -40,6 +43,8 @@ __all__ = [
     "CardSelectorRequest",
     "CardSelectorResult",
     "CardStoreBase",
+    "ConceptNode",
+    "ConceptRegistry",
     "FileCardStore",
     "InMemoryCardStore",
     "MethodCatalog",

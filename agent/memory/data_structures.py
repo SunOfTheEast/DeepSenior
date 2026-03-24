@@ -180,6 +180,39 @@ class SolutionMasteryRecord:
         return cls(**d)
 
 
+@dataclass
+class MethodSlotMastery:
+    """
+    单个 method_slot 的掌握统计（双层 mastery 的方法维度）。
+
+    与 MasteryRecord（concept 维度）并行，用于追踪学生对特定解题方法的熟练度。
+    slot_id 来自 MethodCatalog 中的标准化 slot（如 ellipse_parametric）。
+    """
+    slot_id: str
+    use_count: int = 0
+    success_count: int = 0
+    last_used_at: datetime | None = None
+
+    @property
+    def success_rate(self) -> float:
+        return self.success_count / self.use_count if self.use_count > 0 else 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "slot_id": self.slot_id,
+            "use_count": self.use_count,
+            "success_count": self.success_count,
+            "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "MethodSlotMastery":
+        d = dict(d)
+        lu = d.get("last_used_at")
+        d["last_used_at"] = datetime.fromisoformat(lu) if lu else None
+        return cls(**d)
+
+
 # =============================================================================
 # 语义记忆（Semantic）
 # =============================================================================
@@ -201,6 +234,8 @@ class SemanticMemory:
     # key: concept_id（与 KnowledgeCard.card_id 对应）
     solution_mastery: dict[str, SolutionMasteryRecord] = field(default_factory=dict)
     # key: solution_id（question::standard / question::alt::method）
+    slot_mastery: dict[str, MethodSlotMastery] = field(default_factory=dict)
+    # key: slot_id（来自 MethodCatalog 的标准化方法标识）
 
     # 方法偏好
     method_observations: dict[str, list[MethodObservation]] = field(default_factory=dict)
@@ -242,6 +277,22 @@ class SemanticMemory:
             if rec.level < threshold
         ]
 
+    def get_weak_slots(self, min_uses: int = 2, threshold: float = 0.5) -> list[MethodSlotMastery]:
+        """返回使用次数 >= min_uses 且正确率 < threshold 的薄弱方法 slot，按正确率升序。"""
+        weak = [
+            m for m in self.slot_mastery.values()
+            if m.use_count >= min_uses and m.success_rate < threshold
+        ]
+        weak.sort(key=lambda m: m.success_rate)
+        return weak
+
+    def get_strong_slots(self, min_uses: int = 2, threshold: float = 0.7) -> list[MethodSlotMastery]:
+        """返回使用次数 >= min_uses 且正确率 >= threshold 的擅长方法 slot。"""
+        return [
+            m for m in self.slot_mastery.values()
+            if m.use_count >= min_uses and m.success_rate >= threshold
+        ]
+
     # -------------------------------------------------------------------------
     # 任务定制投影（各 Agent 按需消费，替代全量 to_context_string）
     # -------------------------------------------------------------------------
@@ -276,6 +327,9 @@ class SemanticMemory:
         weak = self.get_weak_concepts()[:max_weak]
         if weak:
             parts.append(f"薄弱知识点：{', '.join(weak)}")
+        weak_slots = self.get_weak_slots()[:3]
+        if weak_slots:
+            parts.append(f"薄弱方法：{', '.join(f'{s.slot_id}({s.success_rate:.0%})' for s in weak_slots)}")
         top_errors = sorted(self.persistent_errors.items(), key=lambda x: -x[1])[:max_errors]
         if top_errors:
             parts.append(f"高频错误：{', '.join(f'{e}({n}次)' for e, n in top_errors)}")
@@ -354,6 +408,7 @@ class SemanticMemory:
             "last_updated": self.last_updated.isoformat(),
             "concept_mastery": {k: v.to_dict() for k, v in self.concept_mastery.items()},
             "solution_mastery": {k: v.to_dict() for k, v in self.solution_mastery.items()},
+            "slot_mastery": {k: v.to_dict() for k, v in self.slot_mastery.items()},
             "method_observations": {
                 k: [o.value for o in v] for k, v in self.method_observations.items()
             },
@@ -379,6 +434,10 @@ class SemanticMemory:
         d["solution_mastery"] = {
             k: SolutionMasteryRecord.from_dict(v)
             for k, v in d.get("solution_mastery", {}).items()
+        }
+        d["slot_mastery"] = {
+            k: MethodSlotMastery.from_dict(v)
+            for k, v in d.get("slot_mastery", {}).items()
         }
         d["method_observations"] = {
             k: [MethodObservation(o) for o in v]
