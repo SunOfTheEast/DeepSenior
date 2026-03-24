@@ -2,6 +2,11 @@
 # -*- coding: utf-8 -*-
 """
 自动化测试脚本 - 模拟学生与 debug_cli 交互，输出到 test_log.md
+
+用法：
+  python auto_test.py                 # 默认运行椭圆点差法场景
+  python auto_test.py ellipse         # 椭圆点差法
+  python auto_test.py sequence        # 数列构造辅助数列法
 """
 
 import asyncio
@@ -10,12 +15,61 @@ import sys
 import time
 from pathlib import Path
 
-# Reuse debug_cli bootstrap
+# Save real argv before debug_cli bootstrap overwrites it
+_real_argv = sys.argv[:]
 sys.argv = ["auto_test.py", "--live"]
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "tools"))
 
 import debug_cli as cli
+
+# ─── Scenarios ────────────────────────────────────────────────────────────────
+
+SCENARIOS = {
+    "ellipse": {
+        "problem_index": 3,  # sample_04_ellipse
+        "label": "椭圆点差法",
+        "submission": (
+            "椭圆 x²/4+y²/3=1，a²=4, b²=3, c²=1, 右焦点 F(1,0)。\n"
+            "我用点差法。设 A(x₁,y₁), B(x₂,y₂) 都在椭圆上，则：\n"
+            "x₁²/4+y₁²/3=1 ... ①\n"
+            "x₂²/4+y₂²/3=1 ... ②\n"
+            "①-② 得 (x₁²-x₂²)/4+(y₁²-y₂²)/3=0\n"
+            "即 (x₁+x₂)(x₁-x₂)/4+(y₁+y₂)(y₁-y₂)/3=0\n"
+            "设中点 M(x₀,y₀)，则 x₁+x₂=2x₀, y₁+y₂=2y₀，\n"
+            "弦斜率 k=(y₁-y₂)/(x₁-x₂)，代入得 2x₀/4+2y₀·k/3=0，\n"
+            "所以 k=-3x₀/(4y₀)。\n"
+            "又直线过焦点 F(1,0)，所以 k=(y₀-0)/(x₀-1)=y₀/(x₀-1)。\n"
+            "两个 k 联立... 但后面我不太会化简了"
+        ),
+        "alt_method": "点差法",
+        "responses": [
+            "两个 k 相等，所以 -3x₀/(4y₀) = y₀/(x₀-1)，交叉相乘得 -3x₀(x₀-1) = 4y₀²",
+            "展开得 -3x₀²+3x₀ = 4y₀²，整理为 3x₀²+4y₀²-3x₀ = 0",
+            "配方：3(x₀²-x₀)+4y₀²=0 → 3(x₀-1/2)²-3/4+4y₀²=0 → 3(x₀-1/2)²+4y₀²=3/4，"
+            "即 (x₀-1/2)²/(1/4) + y₀²/(3/16) = 1，这是一个以(1/2,0)为中心的椭圆",
+            "所以中点 M 的轨迹方程为 (x-1/2)²/(1/4)+y²/(3/16)=1，"
+            "轨迹是椭圆内部的一段弧（需满足直线与原椭圆有两个交点的约束）。",
+        ],
+    },
+    "sequence": {
+        "problem_index": 4,  # sample_05_sequence
+        "label": "数列构造辅助数列法",
+        "submission": (
+            "a₁=1, a_{n+1}=a_n+2n+1。\n"
+            "我注意到 2n+1 = (n+1)² - n²，\n"
+            "所以我想构造辅助数列 b_n = a_n - n²。\n"
+            "那么 b_{n+1} = a_{n+1} - (n+1)²，但是展开后我搞不清楚了...\n"
+            "b_{n+1} 和 b_n 到底是什么关系？"
+        ),
+        "alt_method": "构造辅助数列法",
+        "responses": [
+            "b_{n+1} = a_{n+1}-(n+1)² = (a_n+2n+1)-(n²+2n+1) = a_n-n² = b_n，所以 b_{n+1}=b_n",
+            "因此 {b_n} 是常数列，b_n=b_1=a_1-1=0，所以 a_n=n²+0=n²",
+            "验证：a_1=1²=1 ✓, a_2=1+3=4=2² ✓, a_3=4+5=9=3² ✓，通项公式 aₙ=n²",
+        ],
+    },
+}
 
 # ─── Log ─────────────────────────────────────────────────────────────────────
 
@@ -36,10 +90,18 @@ def flush_log():
 # ─── Test ────────────────────────────────────────────────────────────────────
 
 async def main():
+    # 选择场景
+    scenario_name = "ellipse"
+    for arg in _real_argv[1:]:
+        if arg in SCENARIOS:
+            scenario_name = arg
+    sc = SCENARIOS[scenario_name]
+
     L("# DeepSenior Debug CLI — Live 端到端测试日志")
     L()
     L(f"- **日期**: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     L(f"- **模式**: Live LLM")
+    L(f"- **场景**: `{sc['label']}`")
     L(f"- **API**: `{os.environ.get('OPENAI_BASE_URL', 'N/A')}`")
     L(f"- **模型**: `{os.environ.get('OPENAI_MODEL', 'N/A')}`")
     L()
@@ -47,13 +109,12 @@ async def main():
     repl = cli.DebugREPL(live=True)
     mgr = repl.tutor_mgr
 
-    # 使用椭圆题（index 3）以验证 RAG 知识卡检索命中
-    problem = cli.SAMPLE_PROBLEMS[3]  # sample_04_ellipse
+    problem = cli.SAMPLE_PROBLEMS[sc["problem_index"]]
 
     # ==================================================================
-    # Phase 1: 创建 Tutor 会话（椭圆题）
+    # Phase 1: 创建 Tutor 会话
     # ==================================================================
-    L("## Phase 1: 创建 Tutor 会话（椭圆题 — RAG 命中测试）")
+    L(f"## Phase 1: 创建 Tutor 会话（{sc['label']} — RAG 命中测试）")
     L()
 
     session = mgr.create_session(problem)
@@ -68,25 +129,13 @@ async def main():
     L()
 
     # ==================================================================
-    # Phase 2: 提交用点差法的解答（替代方法 → 触发 RAG）
+    # Phase 2: 提交解答（替代方法 → 触发 RAG）
     # ==================================================================
-    L("## Phase 2: 提交解题过程（点差法 — 替代方法，触发 RAG 检索）")
+    L(f"## Phase 2: 提交解题过程（{sc['alt_method']} — 替代方法，触发 RAG 检索）")
     L()
 
-    work1 = (
-        "椭圆 x²/4+y²/3=1，a²=4, b²=3, c²=1, 右焦点 F(1,0)。\n"
-        "我用点差法。设 A(x₁,y₁), B(x₂,y₂) 都在椭圆上，则：\n"
-        "x₁²/4+y₁²/3=1 ... ①\n"
-        "x₂²/4+y₂²/3=1 ... ②\n"
-        "①-② 得 (x₁²-x₂²)/4+(y₁²-y₂²)/3=0\n"
-        "即 (x₁+x₂)(x₁-x₂)/4+(y₁+y₂)(y₁-y₂)/3=0\n"
-        "设中点 M(x₀,y₀)，则 x₁+x₂=2x₀, y₁+y₂=2y₀，\n"
-        "弦斜率 k=(y₁-y₂)/(x₁-x₂)，代入得 2x₀/4+2y₀·k/3=0，\n"
-        "所以 k=-3x₀/(4y₀)。\n"
-        "又直线过焦点 F(1,0)，所以 k=(y₀-0)/(x₀-1)=y₀/(x₀-1)。\n"
-        "两个 k 联立... 但后面我不太会化简了"
-    )
-    L(f"> **学生提交**:")
+    work1 = sc["submission"]
+    L("> **学生提交**:")
     L()
     for line in work1.split("\n"):
         L(f">   {line}")
@@ -151,16 +200,7 @@ async def main():
         L("## Phase 4: Socratic 对话（逐步引导）")
         L()
 
-        responses = [
-            "两个 k 相等，所以 -3x₀/(4y₀) = y₀/(x₀-1)，交叉相乘得 -3x₀(x₀-1) = 4y₀²",
-            "展开得 -3x₀²+3x₀ = 4y₀²，整理为 3x₀²+4y₀²-3x₀ = 0",
-            "配方：3(x₀²-x₀)+4y₀²=0 → 3(x₀-1/2)²-3/4+4y₀²=0 → 3(x₀-1/2)²+4y₀²=3/4，"
-            "即 (x₀-1/2)²/(1/4) + y₀²/(3/16) = 1，这是一个以(1/2,0)为中心的椭圆",
-            "所以中点 M 的轨迹方程为 (x-1/2)²/(1/4)+y²/(3/16)=1，即 4(x-1/2)²+16y²/3=1。"
-            "把下标去掉，写成 (x-1/2)²/(1/4)+y²/(3/16)=1，轨迹是椭圆内部的一段弧。",
-        ]
-
-        for i, msg in enumerate(responses, 1):
+        for i, msg in enumerate(sc["responses"], 1):
             L(f"### Round {i}")
             L()
             L(f"> **学生**: {msg}")

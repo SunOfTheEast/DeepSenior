@@ -200,6 +200,36 @@ SAMPLE_PROBLEMS = [
         chapter="解析几何",
         tags=["ellipse", "focal_chord", "midpoint"],
     ),
+    ProblemContext(
+        problem_id="sample_05_sequence",
+        problem=(
+            "已知数列 {aₙ} 满足 a₁=1，a_{n+1}=a_n+2n+1（n≥1）。\n"
+            "求数列 {aₙ} 的通项公式。"
+        ),
+        answer="aₙ = n²",
+        knowledge_cards=[
+            KnowledgeCard(
+                card_id="card_sequence_difference_summation",
+                title="逐差求和法（递推求通项）",
+                general_methods=[
+                    "先把递推式整理成 a_{n+1}-a_n=f(n) 的形式",
+                    "对 k=1 到 n-1 累加，左边变成 a_n-a_1",
+                    "再利用常见求和公式得到 a_n 的显式表达",
+                ],
+                hints=[
+                    "这个递推式能不能先改写成前后两项之差？",
+                    "把这些差从 1 累加到 n-1，左边会发生什么消去？",
+                ],
+                common_mistakes=[
+                    "累加上界写错，把 n-1 写成 n，导致多出一项",
+                    "左边累加后误写成 a_{n+1}-a_1",
+                ],
+            ),
+        ],
+        difficulty=2,
+        chapter="数列",
+        tags=["sequence", "recurrence", "summation"],
+    ),
 ]
 
 
