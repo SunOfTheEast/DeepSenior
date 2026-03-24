@@ -873,11 +873,14 @@ class TutorManager:
             card = rc.card
             methods = "、".join(card.general_methods[:2]) if card.general_methods else ""
             hints = "; ".join(card.hints.get(i, "") for i in sorted(card.hints)[:1]) if card.hints else ""
+            mistakes = "；".join(card.common_mistakes[:2]) if card.common_mistakes else ""
             parts = [f"- {card.title}"]
             if methods:
                 parts.append(f"  通法: {methods}")
             if hints:
                 parts.append(f"  提示: {hints}")
+            if mistakes:
+                parts.append(f"  易错: {mistakes}")
             lines.append("\n".join(parts))
         return "\n".join(lines)
 

@@ -6,6 +6,7 @@ system: |
   2. 等价方法（如因式分解 vs 解方程）在同一 outcome-focused checkpoint 下都能通过
   3. 若提供了 alternative_method，按该方法规划，仍保持 outcome-focused 风格
   4. hint_level: 1=隐晦暗示, 2=方向提示, 3=明确引导
+  5. 若补充知识卡中包含"易错"信息，必须在最后增加一个验证型 checkpoint，引导学生检查是否踩中该易错点（如遗漏定义域约束、符号讨论不完整等）
 
   粒度：COARSE(1)=3-4 大阶段 | MEDIUM(2)=5-7 步 | FINE(3)=2-3 子步骤
 
