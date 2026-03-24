@@ -180,6 +180,26 @@ SAMPLE_PROBLEMS = [
         chapter="数列",
         tags=["arithmetic_sequence"],
     ),
+    ProblemContext(
+        problem_id="sample_04_ellipse",
+        problem=(
+            "已知椭圆 C: x²/4 + y²/3 = 1，过右焦点 F 作直线 l 交椭圆于 A、B 两点。\n"
+            "求弦 AB 的中点 M 的轨迹方程。"
+        ),
+        answer="轨迹方程为以 (1,0) 为圆心的椭圆内部曲线（需联立消元后用韦达定理表示中点坐标）",
+        knowledge_cards=[
+            KnowledgeCard(
+                card_id="card_ellipse_set_point",
+                title="设点联立法（椭圆）",
+                general_methods=["设直线联立椭圆方程", "韦达定理", "弦中点坐标公式"],
+                hints=["联立直线与椭圆方程后整理为一元二次方程", "用韦达定理求 x₁+x₂ 和 x₁x₂"],
+                common_mistakes=["忘记检验判别式", "直线斜率不存在时未单独讨论"],
+            ),
+        ],
+        difficulty=3,
+        chapter="解析几何",
+        tags=["ellipse", "focal_chord", "midpoint"],
+    ),
 ]
 
 
