@@ -4,21 +4,25 @@
 
 ## 高优先级
 
-- [ ] **实时绑卡（学生拍照/教师上传）**：无预绑定的新题走 EmbeddingCardIndex search → L0 菜单 → 对话中 search_knowledge 精修。需在 card_preloader 中加 embedding fallback。
-- [ ] **Socratic/Act prompt 加 card_menu（仅新题场景）**：对无预绑定的题，LLM 需要看 card_menu 才能选卡。对已绑定的题，solution_paths 已经提供了精确指引。
+- [ ] **记忆检索（Memory Retrieval）**：当前只有 `get_recent_episodes(limit=10)` 按时间取最近 N 条。缺按 concept/method/error_type 针对性召回（如"学生上次做十字相乘法的情况"）。推荐系统和 Tutor 个性化引导的前置依赖。
+- [ ] **记忆分层压缩（Memory Compression）**：Episodic memory 只增不减，线性膨胀。需要：老旧 episode 压缩为周/月摘要、相似 episode 合并为统计、profile_summary 定期重生成。否则远期记忆完全丢失。
+- [ ] **推荐系统两路 Recall + Merge**：基于学生画像（weak_concepts/slots）+ 题目相似度（problem_type/method_type）的多路召回，DraftQuestionBank 加 cluster 维度查询。
+- [ ] **实时绑卡（学生拍照/教师上传）**：无预绑定的新题走 EmbeddingCardIndex search → L0 菜单 → 对话中 search_knowledge 精修。
 
 ## 中优先级
 
+- [ ] **Socratic/Act prompt 加 card_menu（仅新题场景）**：对无预绑定的题，LLM 需要看 card_menu 才能选卡。
 - [ ] **Think→Act tool 循环全路径启用**：search_knowledge/get_similar_problem 目前只在 ActAgent 条件触发，Socratic 路径未启用。
-- [ ] **Pass 2c JSON 解析失败（4 sections）**：LLM 输出的 LaTeX 反斜杠未正确转义，需在 `_extract_json` 中加转义预处理。
+- [ ] **Pass 2c JSON 解析失败（4 sections）**：LaTeX 反斜杠未正确转义，需在 `_extract_json` 中加转义预处理。
 - [ ] **applies-to 关系显式化**：当前作为 tag_clusters.yaml 子字段，未独立建模。
-- [ ] **solution_paths 注入 Tutor prompt**：ProblemContext 已有 solution_paths，但 Grader/Planner/Socratic prompt 尚未消费这些结构化解法路径。
+- [ ] **Lesson 模块（自动备课）**：结合学生画像 + 知识图谱 + 推荐系统，自动选题组课 + 排序 + 教学设计。依赖推荐系统和记忆检索。
 
 ## 低优先级
 
 - [ ] **6 张 Type B parentless leaves 验证**：孤儿认领代码已写，需重跑 Pass 2b 验证效果。
 - [ ] **"分解特征" cluster 混入方法名**：源头 problem_tags 混了方法名，需 card_generator prompt 迭代。
 - [ ] **69 张卡无 cluster**：raw tags 全低频，可接受，通过章节/公式路径召回。
+- [ ] **3 道题缺 solution_paths**：有 bound_card_ids 兜底，SolverAgent 输出 JSON 解析失败。
 
 ## 延后（等条件成熟）
 
@@ -49,3 +53,4 @@
 - [x] DeepSeek V3.2 thinking + tools — reasoning_content 回传，extra_body 传参
 - [x] EmbeddingCardIndex 接入 Tutor 运行时 — factory 自动选，SkillRegistry 暴露，TutorToolRegistry 接收
 - [x] SolverAgent 绑卡 → Tutor session 桥接 — ProblemContext.bound_card_ids + card_preloader 优先加载
+- [x] solution_paths 注入 Grader/Planner prompt — key_steps 对应 checkpoint 设计
