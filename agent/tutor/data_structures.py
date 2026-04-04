@@ -12,7 +12,7 @@ Router 根据状态机在两者之间切换。
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 
 # =============================================================================
@@ -53,6 +53,78 @@ class ProblemContext:
     chapter: str = ""
     tags: list[str] = field(default_factory=list)
     solution_slice_hints_by_card: dict[str, list[str]] = field(default_factory=dict)
+    # SolverAgent bindings (from DraftQuestion.solution_paths / bound_card_ids)
+    bound_card_ids: list[str] = field(default_factory=list)
+    solution_paths: list[dict] = field(default_factory=list)
+
+    # Pre-loaded published knowledge cards (populated by card_preloader, additive)
+    published_card_menu: list[Any] = field(default_factory=list)    # list[CandidateCardSummary], L0
+    published_card_full: dict[str, Any] = field(default_factory=dict)  # dict[str, PublishedKnowledgeCard], L1
+
+    # -------------------------------------------------------------------------
+    # 内部桥接：Published vs Legacy 卡片统一访问
+    # -------------------------------------------------------------------------
+
+    def _effective_cards(self) -> list:
+        """知识卡片列表——已发布版本优先，回退到手配版本。"""
+        if not self.published_card_full:
+            return self.knowledge_cards
+        result = []
+        seen: set[str] = set()
+        for kc in self.knowledge_cards:
+            pub = self.published_card_full.get(kc.card_id)
+            result.append(pub if pub else kc)
+            seen.add(kc.card_id)
+        # 补充 published_card_full 中存在但 knowledge_cards 里没有的卡片
+        for card_id, pub in self.published_card_full.items():
+            if card_id not in seen:
+                result.append(pub)
+        return result
+
+    @staticmethod
+    def _get_hints_from_card(card: Any) -> list[str]:
+        """桥接：兼容 dict[int,str]（PublishedKnowledgeCard）和 list[str]（KnowledgeCard）。"""
+        hints = card.hints
+        if isinstance(hints, dict):
+            return [hints[k] for k in sorted(hints)]
+        return list(hints)
+
+    # -------------------------------------------------------------------------
+    # L0 菜单 / L1 展开（Pre-load 专用）
+    # -------------------------------------------------------------------------
+
+    def get_l0_menu_for_llm(self, max_cards: int = 20) -> str:
+        """格式化 L0 菜单：每行 card_id | title | summary（截断）。"""
+        if not self.published_card_menu:
+            return ""
+        lines: list[str] = []
+        for cs in self.published_card_menu[:max_cards]:
+            summary = getattr(cs, "summary", "")
+            trunc = summary[:60] + "…" if len(summary) > 60 else summary
+            lines.append(f"- {cs.title}（{cs.card_id}）: {trunc}")
+        return "\n".join(lines)
+
+    def get_l1_for_llm(self, card_ids: list[str], max_cards: int = 3) -> str:
+        """展开选中的 L1 卡片全文（methods + hints + mistakes）。"""
+        cards = [self.published_card_full[cid] for cid in card_ids
+                 if cid in self.published_card_full][:max_cards]
+        if not cards:
+            return ""
+        parts: list[str] = []
+        for c in cards:
+            methods = "、".join(c.general_methods[:3]) if c.general_methods else ""
+            hints_list = self._get_hints_from_card(c)
+            hints_text = "；".join(hints_list[:2]) if hints_list else ""
+            mistakes = "；".join(c.common_mistakes[:2]) if c.common_mistakes else ""
+            block = [f"### {c.title}（{c.card_id}）"]
+            if methods:
+                block.append(f"  通法: {methods}")
+            if hints_text:
+                block.append(f"  提示: {hints_text}")
+            if mistakes:
+                block.append(f"  易错: {mistakes}")
+            parts.append("\n".join(block))
+        return "\n\n".join(parts)
 
     # -------------------------------------------------------------------------
     # 便捷聚合方法（供 agent prompt 格式化使用）
@@ -61,24 +133,24 @@ class ProblemContext:
     def get_methods_summary(self) -> str:
         """所有知识卡片的通性通法汇总（去重）"""
         methods: list[str] = []
-        for kc in self.knowledge_cards:
+        for kc in self._effective_cards():
             methods.extend(kc.general_methods)
         return "、".join(dict.fromkeys(methods))  # 保序去重
 
     def get_hints_summary(self) -> str:
         hints: list[str] = []
-        for kc in self.knowledge_cards:
-            hints.extend(kc.hints)
+        for kc in self._effective_cards():
+            hints.extend(self._get_hints_from_card(kc))
         return "\n".join(f"- {h}" for h in hints)
 
     def get_common_mistakes_summary(self) -> str:
         mistakes: list[str] = []
-        for kc in self.knowledge_cards:
+        for kc in self._effective_cards():
             mistakes.extend(kc.common_mistakes)
         return "\n".join(f"- {m}" for m in mistakes)
 
     def get_card_titles(self) -> str:
-        return "、".join(kc.title for kc in self.knowledge_cards)
+        return "、".join(kc.title for kc in self._effective_cards())
 
     # -------------------------------------------------------------------------
     # 预算化聚合方法（供 Context Governance Layer 消费）
@@ -91,7 +163,7 @@ class ProblemContext:
     ) -> list[str]:
         """去重后取 top-k 方法，总长不超 max_chars。"""
         seen: dict[str, None] = {}
-        for kc in self.knowledge_cards:
+        for kc in self._effective_cards():
             for m in kc.general_methods:
                 seen.setdefault(m, None)
         result: list[str] = []
@@ -117,9 +189,9 @@ class ProblemContext:
         """按卡片优先级取 top-k 提示，可选包含 slice 级提示。"""
         result: list[str] = []
         total_chars = 0
-        for kc in self.knowledge_cards[:max_cards]:
+        for kc in self._effective_cards()[:max_cards]:
             card_count = 0
-            for h in kc.hints:
+            for h in self._get_hints_from_card(kc):
                 if len(result) >= max_total_items:
                     break
                 if total_chars + len(h) > max_chars:
@@ -155,7 +227,7 @@ class ProblemContext:
         """按卡片优先级取 top-k 易错点。"""
         result: list[str] = []
         total_chars = 0
-        for kc in self.knowledge_cards[:max_cards]:
+        for kc in self._effective_cards()[:max_cards]:
             card_count = 0
             for m in kc.common_mistakes:
                 if len(result) >= max_total_items:
@@ -173,7 +245,7 @@ class ProblemContext:
 
     def get_card_titles_for_llm(self, max_cards: int = 3) -> list[str]:
         """取 top-k 卡片标题。"""
-        return [kc.title for kc in self.knowledge_cards[:max_cards]]
+        return [kc.title for kc in self._effective_cards()[:max_cards]]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ProblemContext":
@@ -422,6 +494,16 @@ class TutorMode(str, Enum):
     IDLE     = "idle"
 
 
+# 深问子流程单次会话的轮次预算（超过后自动收束回主线）
+DEEP_DIVE_MAX_ROUNDS = 5
+
+
+class PlanAction(str, Enum):
+    """Router 对当前 plan 的动作决策。"""
+    KEEP = "keep"
+    REBUILD = "rebuild"
+
+
 class ErrorType(str, Enum):
     """
     学生错误类型分类（来自批改结果）
@@ -430,7 +512,7 @@ class ErrorType(str, Enum):
       CORRECT          → 直接表扬，结束
       COMPUTATIONAL    → 直接纠正，不走苏格拉底
       MISCONCEPTION    → 直接澄清概念，不走苏格拉底
-      INCOMPLETE       → 针对性追问，不建完整 plan
+      INCOMPLETE       → 针对性追问，不建完整 plan（高风险点：若话术过泛会“评审腔直出”）
       NO_ATTEMPT       → 跳过 Grader，从审题开始引导
       ON_TRACK_STUCK   → 苏格拉底，FINE 粒度
       WRONG_PATH_MINOR → 苏格拉底，MEDIUM 粒度
@@ -444,20 +526,6 @@ class ErrorType(str, Enum):
     INCOMPLETE        = "incomplete"
     MISCONCEPTION     = "misconception"
     NO_ATTEMPT        = "no_attempt"
-
-
-class TutorAction(str, Enum):
-    """LLM 路由动作"""
-    CONTINUE_SOCRATIC  = "continue_socratic"
-    HANDLE_FRUSTRATION = "handle_frustration"
-    HANDLE_ANSWER_REQ  = "handle_answer_request"
-    HANDLE_CHALLENGE   = "handle_challenge"
-    START_DEEP_DIVE    = "start_deep_dive"
-    CONTINUE_DEEP_DIVE = "continue_deep_dive"
-    CLOSE_DEEP_DIVE    = "close_deep_dive"
-    FOLLOWUP_QUESTION  = "followup_question"
-    EXPLICIT_REGRESS   = "explicit_regress"
-    OFF_TOPIC          = "off_topic"
 
 
 class GranularityLevel(int, Enum):
@@ -508,9 +576,14 @@ class GraderResult:
     """批改结果（由 GraderAgent 生成）"""
     error_type: ErrorType
     is_correct: bool
+    # 面向“系统内部”的事实描述，常是评审语体（例如“学生…”）。
+    # 是否直接展示给学生，需要上层二次包装决定。
     error_description: str
+    # 学生当前做法的一句话抽象，供 PathEvaluator/Planner 使用。
     student_approach: str
+    # 仅在计算错误等场景更有价值，用于告诉学生“错在第几步”。
     error_location: str | None = None
+    # 给出“下一步怎么补”的短指令，推荐优先作为学生可见文本。
     correction_note: str | None = None
     suggested_granularity: GranularityLevel = GranularityLevel.MEDIUM
     # 替代解法标记：学生使用的方法是否不在知识卡片的通性通法中
@@ -536,10 +609,55 @@ class RouterDecision:
     """Router 的调度决策"""
     mode: TutorMode
     reason: str
-    needs_new_plan: bool = False
+    # keep: 沿用当前 plan；rebuild: 新建 plan（通常伴随 checkpoint 语义重对齐）
+    plan_action: PlanAction = PlanAction.KEEP
     suggested_granularity: GranularityLevel = GranularityLevel.MEDIUM
+    # 仅 rebuild 场景有意义，作为 Planner 的“重启原因”输入。
     reset_from_error: str | None = None
-    deliver_grader_feedback: bool = False
+
+
+# =============================================================================
+# Method Inquiry（方法提议归档）
+# =============================================================================
+
+@dataclass
+class MethodInquiry:
+    """
+    学生在对话中提出的方法提议归档
+
+    归档后供 Review 模块做 deep research（method_enumerator + method_solver）。
+    """
+    method_name: str            # 学生提到的方法名（如"点差法"）
+    student_message: str        # 原始提问
+    tutor_response: str         # 系统的简短回答
+    checkpoint_index: int       # 提问时所处的 checkpoint
+    timestamp: float = 0.0
+
+
+# =============================================================================
+# Pending Interaction（统一待澄清交互槽）
+# =============================================================================
+
+class PendingType(str, Enum):
+    """待澄清交互的类型"""
+    DEEP_DIVE_REOPEN = "deep_dive_reopen"
+    METHOD_INQUIRY = "method_inquiry"
+
+
+@dataclass
+class PendingInteraction:
+    """
+    系统向学生提出二选一澄清问题后的待回复状态。
+
+    单槽设计：session 上最多一个 PendingInteraction，
+    由 PendingSlot 管理生命周期（set/clear/cancel）。
+    """
+    pending_type: PendingType
+    payload: dict[str, Any]   # 类型专属数据，由对应 handler 定义
+    question_text: str        # 展示给学生的澄清消息
+    created_at: float = field(
+        default_factory=lambda: datetime.now().timestamp()
+    )
 
 
 # =============================================================================
@@ -571,6 +689,7 @@ class TutorSession:
     mastery_before: float | None = None
     total_hints_given: int = 0
     total_attempts: int = 0
+    blank_submission_streak: int = 0
 
     # 替代解法标记（供 Progress 模块决定是否更新知识卡片熟练度）
     used_alternative_method: bool = False
@@ -586,8 +705,22 @@ class TutorSession:
     deep_dive_rounds: int = 0
     deep_dive_return_checkpoint: int | None = None
     deep_dive_topic: str = ""
+    # 多窗口 deep dive 状态
+    deep_dive_active_window_id: str | None = None
+    # DEPRECATED — 由 pending_interaction 统一管理
+    deep_dive_reopen_pending: dict[str, Any] | None = None
+    # 所有深问窗口元信息（新开/恢复/关闭轨迹）
+    deep_dive_windows: list[dict[str, Any]] = field(default_factory=list)
     deep_dive_records: list[dict[str, Any]] = field(default_factory=list)
     deferred_deep_dive_tasks: list[dict[str, Any]] = field(default_factory=list)
+
+    # 方法提议
+    method_inquiries: list[MethodInquiry] = field(default_factory=list)
+    # DEPRECATED — 由 pending_interaction 统一管理
+    method_inquiry_pending: dict[str, Any] | None = None
+
+    # 统一待澄清交互槽（替代 deep_dive_reopen_pending + method_inquiry_pending）
+    pending_interaction: PendingInteraction | None = None
 
     # -------------------------------------------------------------------------
     # 便捷属性
