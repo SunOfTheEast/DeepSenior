@@ -1,6 +1,6 @@
 # DeepTutor 系统文档（重写版）
 
-> 更新时间：2026-04-03（PDF 管线 v2 + Foundation + Pass 2c 题目提取 + Tag Clustering + applies-to）
+> 更新时间：2026-04-04（PDF 管线 v2 全链路：拆书→生卡→提题→聚类→解题绑卡→语义搜索→Tutor 消费）
 > 审计范围：`agent/**/*.py`（Tutor / Review / Memory / Recommend / Progress）
 > 文档目标：用"当前真实代码行为"描述系统，不混入未落地设计
 > 架构宪法：见 [`doc/TUTOR_CONSTITUTION.md`](./doc/TUTOR_CONSTITUTION.md)
@@ -203,6 +203,8 @@ Pass 3 (RelationshipBuilder)    → 三段式：3a 代码召回 → 3b 小上下
 Foundation (RelationshipBuilder) → 检测书外概念 → LLM 语义分组 → FoundationConcept + 卡片 assumed_knowledge 回填
 Pass 3.5 (DeepThinkAgent)       → list[ThoughtEntity]（可选，用最强模型发现深层模式）
 Pass 4 (TagClusterer+CatalogBuilder) → 白名单过滤 + 三维 tag clustering + applies-to 映射 + method_catalog + concepts YAML
+Solve (SolverAgent)             → 批量解题 + RAG tool calling + 绑卡（solution_paths + bound_card_ids）
+                                  primary model → fallback model 自动切换（env: LLM_FALLBACK_MODEL/KEY/HOST）
 Review (CLI interactive)        → approve / reject / skip
 Promote                         → 将 approved 内容 additive merge 到生产目录
 ```
@@ -219,6 +221,7 @@ Promote                         → 将 approved 内容 additive merge 到生产
 | 基石概念 | 对书外概念做语义分组 + 命名 + 描述 | 检测 requires - teaches 差集，回填 assumed_knowledge |
 | 题目提取 | 识别例题/习题边界，提取题干和解答 | 按 section_type 分路，archetype 带解答，exercise 不带 |
 | 标签聚类 | 对过滤后的 verified tags 做语义分组 | 白名单过滤（method 参考集 / problem 共现+频率 / thinking 频率），applies-to 共现统计 |
+| 解题绑卡 | thinking + tool calling 解题，引用知识卡方法步骤 | 从 tool_calls 日志提取 card_ids，枚举多条解法路径 |
 
 **设计要点**：
 - **两阶段卡片生成**：先当老师分析（Pass 2a 识别知识原子/卡点/陷阱 + teaches/requires 概念 + 公式），再填模板（Pass 2b few-shot 生成），避免 LLM 沦为"教材复述"。
@@ -232,8 +235,11 @@ Promote                         → 将 approved 内容 additive merge 到生产
 - **基石概念层（方案 D）**：独立 pass，检测书外前置概念（`requires_concepts - all_taught`），一次 LLM 调用做语义分组+命名，生成 `foundation_concepts.yaml`（含 `covers` + `source_book` 字段为跨书方案 C 留接口），回填卡片 `assumed_knowledge`。
 - **题目提取（Pass 2c）**：`QuestionExtractor` 从 section 提取 archetype（例题，含 solution_text）和 exercise（习题，不带答案——答案由学生做题产生或强模型求解）。`DraftQuestion` 含 question_type / stem / solution_text / source_label。section_type 由 Pass 1 标注。
 - **标签聚类 + 废话过滤（Pass 4 扩展）**：`TagClusterer` 三维度独立处理：method_tags 用 anchor 标题 + teaches_concepts + catalog 白名单过滤；problem_tags 用同 method 组共现 ≥2 + 全局频率 ≥3 过滤；thinking_tags 用全局频率 ≥5 过滤。过滤后 verified tags 送 LLM 聚类。回填卡片 `problem_type/method_type/thinking_type`。额外提取 `applies_to` 映射（method_type → problem_type 共现），是题目召回骨架。废话标签存入 `filtered_tags` 反馈下一轮 card_generator prompt。
+- **解题绑卡（SolverAgent）**：`SolverAgent` 使用 DeepSeek V3.2 thinking + tool calling，解题过程中通过 `search_knowledge` 检索知识卡，绑卡是解题的副产品。支持两种模式：exercise 模式（LLM 从零求解）和 archetype 模式（从已有解答反推方法绑定）。枚举多条解法路径（avg 2.0 paths/题），每条含 method + card_ids + key_steps。primary model 失败自动 fallback 到备用模型。
+- **语义搜索（EmbeddingCardIndex）**：ZhipuAI embedding-3 向量化，首次 build 调 API 后缓存到磁盘（npy+json），后续秒加载。`build_card_retriever()` 自动选择：有 `ZHIPUAI_API_KEY` 用 embedding，否则 fallback 到 SimpleCardIndex。接入 Tutor 运行时：factory → SkillRegistry.card_index → TutorToolRegistry → search_knowledge query 模式。
+- **Tutor 绑卡桥接**：`ProblemContext` 新增 `bound_card_ids` + `solution_paths` 字段。`card_preloader` 优先从 solver 绑定加载 L0/L1 卡片。`DraftQuestionBank._to_problem_context()` 完整传递绑卡信息。Grader/Planner prompt 注入 `solution_paths`（key_steps 对应 checkpoint 设计）。
 
-CLI 入口：`tools/pdf_pipeline_cli.py`，子命令含 extract / analyze / generate / questions / relate / foundation / think / catalog / review / promote / status / run。
+CLI 入口：`tools/pdf_pipeline_cli.py`，子命令含 extract / analyze / generate / questions / relate / foundation / think / catalog / solve / review / promote / status / run。
 
 ---
 
