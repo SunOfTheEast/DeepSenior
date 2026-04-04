@@ -117,4 +117,6 @@ class DraftQuestionBank(ProblemBankBase):
             difficulty=q.get("difficulty", 0),
             chapter=q.get("chapter", ""),
             tags=q.get("problem_tags", []) + q.get("method_tags", []),
+            bound_card_ids=q.get("bound_card_ids", []),
+            solution_paths=q.get("solution_paths", []),
         )

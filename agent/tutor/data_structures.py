@@ -93,6 +93,20 @@ class ProblemContext:
     # L0 菜单 / L1 展开（Pre-load 专用）
     # -------------------------------------------------------------------------
 
+    def get_solution_paths_for_llm(self, max_paths: int = 3) -> str:
+        """格式化 solution_paths 供 Grader/Planner 使用。"""
+        if not self.solution_paths:
+            return ""
+        lines: list[str] = []
+        for i, p in enumerate(self.solution_paths[:max_paths]):
+            method = p.get("method", "")
+            steps = p.get("key_steps", [])
+            cards = p.get("card_ids", [])
+            lines.append(f"解法{i+1}: {method} (卡片: {', '.join(cards)})")
+            for s in steps[:3]:
+                lines.append(f"  - {s}")
+        return "\n".join(lines)
+
     def get_l0_menu_for_llm(self, max_cards: int = 20) -> str:
         """格式化 L0 菜单：每行 card_id | title | summary（截断）。"""
         if not self.published_card_menu:
