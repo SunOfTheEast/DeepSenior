@@ -73,6 +73,7 @@ class PlannerAgent(BaseAgent):
         granularity: GranularityLevel,
         alternative_method: str | None = None,
         supplementary_cards: str | None = None,
+        progress_snapshot: str | None = None,
     ) -> SolutionPlan:
         """
         生成引导方案
@@ -85,6 +86,7 @@ class PlannerAgent(BaseAgent):
             alternative_method: 若学生使用了替代解法，此处传入方法名，
                                 Planner 将按该方法生成 checkpoints
             supplementary_cards: RAG 检索到的补充知识卡（已格式化文本）
+            progress_snapshot: 重建时的既有进度快照（已通过步骤 + 当前目标 + 本轮提交摘要）
 
         Returns:
             SolutionPlan
@@ -102,6 +104,7 @@ class PlannerAgent(BaseAgent):
                 max_cards=2, max_items_per_card=2, max_total_items=3,
             )
         )
+        solution_paths = problem_context.get_solution_paths_for_llm(max_paths=3)
         answer_outline = self._make_answer_outline(problem_context.answer)
 
         # 整 prompt 预算仲裁
@@ -110,10 +113,13 @@ class PlannerAgent(BaseAgent):
             "error_description": error_description,
             "selected_methods": selected_methods,
             "planning_hints": planning_hints,
+            "solution_paths": solution_paths,
             "answer_outline": answer_outline,
         }
         if supplementary_cards:
             candidate["supplementary_cards"] = supplementary_cards
+        if progress_snapshot:
+            candidate["progress_snapshot"] = progress_snapshot
         assembly = assemble(
             candidate,
             PLANNER_POLICY,
@@ -132,7 +138,9 @@ class PlannerAgent(BaseAgent):
             answer_outline=p.get("answer_outline", answer_outline),
             selected_methods=p.get("selected_methods", selected_methods),
             planning_hints=p.get("planning_hints", planning_hints),
+            solution_paths=p.get("solution_paths", solution_paths),
             error_description=p.get("error_description", error_description),
+            progress_snapshot=p.get("progress_snapshot", progress_snapshot or "（无进度快照）"),
             start_from=start_from,
             granularity=granularity.value,
             alternative_method=alternative_method or "（按通性通法规划）",
