@@ -371,11 +371,27 @@ class PipelineRunner:
             def get_card_sync(self, cid):
                 return self._map.get(cid)
 
-        solver = SolverAgent(
+        draft_card_store = _DraftCardStore(draft_cards)
+        solver_primary = SolverAgent(
             card_index=card_index,
-            card_store=_DraftCardStore(draft_cards),
+            card_store=draft_card_store,
             **self._agent_kwargs(),
         )
+
+        # Fallback solver (optional, configured via env)
+        solver_fallback = None
+        fallback_model = os.environ.get("LLM_FALLBACK_MODEL", "")
+        fallback_key = os.environ.get("LLM_FALLBACK_KEY", "")
+        fallback_host = os.environ.get("LLM_FALLBACK_HOST", "")
+        if fallback_model and fallback_key:
+            solver_fallback = SolverAgent(
+                card_index=card_index,
+                card_store=draft_card_store,
+                api_key=fallback_key,
+                base_url=fallback_host or self._base_url,
+                model=fallback_model,
+            )
+            logger.info(f"Fallback solver: {fallback_model}")
 
         # Process in batches with concurrency
         sem = asyncio.Semaphore(self._max_concurrency)
@@ -386,23 +402,15 @@ class PipelineRunner:
             if q.bound_card_ids:
                 return None
             async with sem:
-                try:
-                    result = await solver.solve(
-                        question_id=q.question_id,
-                        stem=q.stem,
-                        chapter=q.chapter,
-                        existing_solution=q.solution_text if q.question_type == "archetype" else "",
-                    )
-                    q.solution_paths = [
-                        {"method": p.method, "card_ids": p.card_ids,
-                         "key_steps": p.key_steps, "solution_text": p.solution_text}
-                        for p in result.solution_paths
-                    ]
-                    q.bound_card_ids = result.all_card_ids
-                    return result
-                except Exception as exc:
-                    logger.error(f"Solve failed for {q.question_id}: {exc}")
-                    return None
+                # Level 1: primary model
+                result = await self._try_solve(solver_primary, q)
+                # Level 2: fallback model
+                if not result and solver_fallback:
+                    logger.info(f"Fallback for {q.question_id}")
+                    result = await self._try_solve(solver_fallback, q)
+                if not result:
+                    logger.warning(f"Unsolved: {q.question_id}")
+                return result
 
         for batch_start in range(0, len(questions), batch_size):
             batch = questions[batch_start:batch_start + batch_size]
@@ -424,6 +432,28 @@ class PipelineRunner:
         bound_count = sum(1 for q in questions if q.bound_card_ids)
         logger.info(f"Solve complete: {bound_count}/{len(questions)} questions bound to cards")
         return all_results
+
+    @staticmethod
+    async def _try_solve(solver, q) -> "SolveResult | None":
+        """Attempt to solve a question. Returns None on failure."""
+        try:
+            result = await solver.solve(
+                question_id=q.question_id,
+                stem=q.stem,
+                chapter=q.chapter,
+                existing_solution=q.solution_text if q.question_type == "archetype" else "",
+            )
+            if result.all_card_ids:
+                q.solution_paths = [
+                    {"method": p.method, "card_ids": p.card_ids,
+                     "key_steps": p.key_steps, "solution_text": p.solution_text}
+                    for p in result.solution_paths
+                ]
+                q.bound_card_ids = result.all_card_ids
+                return result
+        except Exception as exc:
+            logger.error(f"Solve failed for {q.question_id}: {exc}")
+        return None
 
     async def run_pass3(self) -> list[DraftCard]:
         """Pass 3: Cross-section relationship inference."""
@@ -618,6 +648,7 @@ class PipelineRunner:
         if not skip_deepthink:
             await self.run_pass3_5()
         await self.run_pass4()
+        await self.run_solve()
 
         state = self._get_or_create_state()
         state.current_pass = "done"
@@ -636,7 +667,7 @@ class PipelineRunner:
         *,
         skip_deepthink: bool = False,
     ) -> PipelineState:
-        """Run the complete pipeline: Pass 1 → 2 → 2c → 3 → 3.5 → 4."""
+        """Run the complete pipeline: Pass 1 → 2 → 2c → 3 → 3.5 → 4 → solve."""
         await self.run_pass1(toc_text)
         await self.run_pass2_all(section_contents)
         await self.run_pass2c()
@@ -645,6 +676,7 @@ class PipelineRunner:
         if not skip_deepthink:
             await self.run_pass3_5()
         await self.run_pass4()
+        await self.run_solve()
 
         state = self._get_or_create_state()
         state.current_pass = "done"
