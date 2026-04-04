@@ -26,11 +26,14 @@ from typing import Any, Callable
 from agent.knowledge import build_card_retriever, CardRetriever
 from agent.skills_common import SkillMeta, wrap_sync_as_async
 from ..agents import (
+    ActAgent,
     GraderAgent,
     PlannerAgent,
     RouterAgent,
     SocraticAgent,
-    TutorActionClassifierAgent,
+    SignalAgent,
+    StrategyAgent,
+    ThinkAgent,
 )
 from ..agents.path_evaluator_agent import PathEvaluatorAgent
 
@@ -61,6 +64,8 @@ class SkillRegistry:
                 "start_from: str",
                 "granularity: GranularityLevel",
                 "alternative_method: str | None = None",
+                "supplementary_cards: str | None = None",
+                "progress_snapshot: str | None = None",
             ],
             output="SolutionPlan",
             tags=["llm", "stateless"],
@@ -76,18 +81,6 @@ class SkillRegistry:
             ],
             output="str",
             tags=["llm", "stateless"],
-        ),
-        SkillMeta(
-            name="stream_hint",
-            description="流式生成苏格拉底引导语",
-            inputs=[
-                "problem: str",
-                "checkpoint: Checkpoint",
-                "interaction_history: list[dict]",
-                "student_response: str",
-            ],
-            output="AsyncGenerator[str, None]",
-            tags=["llm", "stateless", "streaming"],
         ),
         SkillMeta(
             name="evaluate_approach",
@@ -113,23 +106,26 @@ class SkillRegistry:
             tags=["llm", "stateless"],
         ),
         SkillMeta(
+            name="evaluate_progress_map",
+            description="一次评估从当前起点开始的连续多个 checkpoint（返回连续通过数量）",
+            inputs=[
+                "checkpoints: list[Checkpoint]",
+                "current_checkpoint: int",
+                "passed_checkpoints_history: str",
+                "student_response: str",
+                "total_checkpoints: int | str",
+                "interaction_context: str",
+                "max_steps: int",
+            ],
+            output="dict[passed_count, next_hint_level, reason, regressed_to_checkpoint, used_alternative_method, alternative_method_name]",
+            tags=["llm", "stateless"],
+        ),
+        SkillMeta(
             name="route_decision",
             description="根据批改结果决定路由策略（规则驱动，无 LLM 调用）",
             inputs=["grader_result: GraderResult"],
             output="RouterDecision",
             tags=["rule_based", "stateless"],
-        ),
-        SkillMeta(
-            name="classify_action",
-            description="LLM 动作分类（含完整 session_context）",
-            inputs=[
-                "problem_context: ProblemContext",
-                "student_message: str",
-                "interaction_history: list[dict]",
-                "session_context: str",
-            ],
-            output="dict[primary_action, target_step, confidence, reason]",
-            tags=["llm", "stateless"],
         ),
         SkillMeta(
             name="retrieve_cards",
@@ -163,19 +159,25 @@ class SkillRegistry:
         self._socratic       = SocraticAgent(**_kwargs)
         self._path_evaluator = PathEvaluatorAgent(**_kwargs)
         self._router         = RouterAgent(**_kwargs)
-        self._action_cls     = TutorActionClassifierAgent(**_kwargs)
         self._card_retriever = build_card_retriever(**_kwargs)
+
+        # Think→Act agents
+        self._think_agent    = ThinkAgent(**_kwargs)
+        self._signal_agent   = SignalAgent(**_kwargs)
+        self._strategy_agent = StrategyAgent(**_kwargs)
+        self._act_agent      = ActAgent(**_kwargs)
 
         # skill name → callable（async 或被包装为 async）
         self._skills: dict[str, Callable] = {
+            # 事实判题入口：只输出结构化结果，不直接生成对学生话术。
             "grade_work":          self._grader.process,
             "plan_guidance":       self._planner.process,
             "generate_hint":       self._socratic.process,
-            "stream_hint":         self._socratic.stream_process,
             "evaluate_approach":   self._path_evaluator.process,
             "evaluate_checkpoint": self._router.evaluate_checkpoint,
+            "evaluate_progress_map": self._router.evaluate_progress_map,
+            # route_decision 是同步规则函数，这里统一包装成 async 以简化上层调用。
             "route_decision":      wrap_sync_as_async(self._router.decide_after_grading),
-            "classify_action":     self._action_cls.classify_action,
             "retrieve_cards":      self._card_retriever.retrieve,
         }
 
@@ -186,6 +188,16 @@ class SkillRegistry:
     # -------------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------------
+
+    @property
+    def card_store(self):
+        """Expose the FileCardStore for sync pre-loading at session creation."""
+        return self._card_retriever.card_store
+
+    @property
+    def card_index(self):
+        """Expose the CardIndex for TutorToolRegistry search_knowledge."""
+        return self._card_retriever.card_index
 
     def get(self, name: str) -> Callable:
         """
@@ -224,6 +236,27 @@ class SkillRegistry:
 
     def has(self, name: str) -> bool:
         return name in self._skills
+
+    # Think→Act agent instances (used by ThinkActManager)
+    @property
+    def think_agent(self) -> ThinkAgent:
+        return self._think_agent
+
+    @property
+    def signal_agent(self) -> SignalAgent:
+        return self._signal_agent
+
+    @property
+    def strategy_agent(self) -> StrategyAgent:
+        return self._strategy_agent
+
+    @property
+    def act_agent(self) -> ActAgent:
+        return self._act_agent
+
+    @property
+    def planner_agent(self) -> PlannerAgent:
+        return self._planner
 
     # -------------------------------------------------------------------------
     # Internal

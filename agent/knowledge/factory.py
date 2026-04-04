@@ -49,12 +49,20 @@ def build_card_retriever(
         else:
             card_store = NullCardStore()
 
-    # -- card index (auto-build from FileCardStore when available) --
+    # -- card index (auto-build; prefer EmbeddingCardIndex if API key available) --
     if card_index is None:
         if isinstance(card_store, FileCardStore):
-            idx = SimpleCardIndex()
-            idx.build(card_store.all_cards())
-            card_index = idx
+            import os
+            zhipuai_key = os.environ.get("ZHIPUAI_API_KEY", "")
+            if zhipuai_key:
+                from .card_index import EmbeddingCardIndex
+                card_index = EmbeddingCardIndex(
+                    api_key=zhipuai_key,
+                    cache_dir=str(Path(card_store._root).parent / ".embedding_cache"),
+                )
+            else:
+                card_index = SimpleCardIndex()
+            card_index.build(card_store.all_cards())
         else:
             card_index = NullCardIndex()
 
