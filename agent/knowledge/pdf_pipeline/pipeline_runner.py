@@ -308,6 +308,123 @@ class PipelineRunner:
         )
         return all_questions
 
+    async def run_solve(self, batch_size: int = 40) -> list:
+        """Solve questions + bind cards via SolverAgent with RAG tool calling."""
+        from .solver_agent import SolverAgent
+        from ..card_index import EmbeddingCardIndex
+        from ..data_structures import PublishedKnowledgeCard
+        from dataclasses import asdict
+        import yaml, os
+
+        logger.info("Solve: loading questions and building card index...")
+        questions = self.store.list_draft_questions()
+        if not questions:
+            logger.info("No questions found")
+            return []
+
+        # Build card index from drafts
+        draft_cards = []
+        cards_dir = self.store.base / "cards"
+        if cards_dir.exists():
+            for path in sorted(cards_dir.rglob("*.yaml")):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                if not data or not data.get("card_id"):
+                    continue
+                try:
+                    draft_cards.append(PublishedKnowledgeCard(
+                        card_id=data["card_id"], title=data.get("title", ""),
+                        summary=data.get("summary", ""),
+                        general_methods=data.get("general_methods", []),
+                        hints=data.get("hints", {}),
+                        common_mistakes=data.get("common_mistakes", []),
+                        prerequisite_card_ids=data.get("prerequisite_card_ids", []),
+                        problem_tags=data.get("problem_tags", []),
+                        method_tags=data.get("method_tags", []),
+                        thinking_tags=data.get("thinking_tags", []),
+                        formula_cues=data.get("formula_cues", []),
+                        card_type=data.get("card_type", ""),
+                        parent_card_id=data.get("parent_card_id"),
+                        children=data.get("children", []),
+                        thought_ids=data.get("thought_ids", []),
+                        figures=data.get("figures", []),
+                        chapter=data.get("chapter", ""),
+                    ))
+                except Exception:
+                    pass
+
+        # Try EmbeddingCardIndex, fallback to SimpleCardIndex
+        zhipuai_key = os.environ.get("ZHIPUAI_API_KEY", "")
+        if zhipuai_key and draft_cards:
+            card_index = EmbeddingCardIndex(
+                api_key=zhipuai_key,
+                cache_dir=str(self.store.base / ".embedding_cache"),
+            )
+        else:
+            from ..card_index import SimpleCardIndex
+            card_index = SimpleCardIndex()
+        card_index.build(draft_cards)
+
+        class _DraftCardStore:
+            def __init__(self, cards):
+                self._map = {c.card_id: c for c in cards}
+            def get_card_sync(self, cid):
+                return self._map.get(cid)
+
+        solver = SolverAgent(
+            card_index=card_index,
+            card_store=_DraftCardStore(draft_cards),
+            **self._agent_kwargs(),
+        )
+
+        # Process in batches with concurrency
+        sem = asyncio.Semaphore(self._max_concurrency)
+        all_results = []
+
+        async def _solve_one(q):
+            # Skip already-bound questions
+            if q.bound_card_ids:
+                return None
+            async with sem:
+                try:
+                    result = await solver.solve(
+                        question_id=q.question_id,
+                        stem=q.stem,
+                        chapter=q.chapter,
+                        existing_solution=q.solution_text if q.question_type == "archetype" else "",
+                    )
+                    q.solution_paths = [
+                        {"method": p.method, "card_ids": p.card_ids,
+                         "key_steps": p.key_steps, "solution_text": p.solution_text}
+                        for p in result.solution_paths
+                    ]
+                    q.bound_card_ids = result.all_card_ids
+                    return result
+                except Exception as exc:
+                    logger.error(f"Solve failed for {q.question_id}: {exc}")
+                    return None
+
+        for batch_start in range(0, len(questions), batch_size):
+            batch = questions[batch_start:batch_start + batch_size]
+            batch_num = batch_start // batch_size + 1
+            logger.info(
+                f"Solve batch {batch_num}: "
+                f"questions {batch_start+1}-{min(batch_start+batch_size, len(questions))}/{len(questions)} "
+                f"(concurrency={self._max_concurrency})"
+            )
+
+            results = await asyncio.gather(*[_solve_one(q) for q in batch])
+            batch_results = [r for r in results if r is not None]
+            all_results.extend(batch_results)
+
+            # Save batch results
+            self.store.save_questions(batch)
+            logger.info(f"Batch {batch_num} saved. {len(all_results)}/{len(questions)} solved so far.")
+
+        bound_count = sum(1 for q in questions if q.bound_card_ids)
+        logger.info(f"Solve complete: {bound_count}/{len(questions)} questions bound to cards")
+        return all_results
+
     async def run_pass3(self) -> list[DraftCard]:
         """Pass 3: Cross-section relationship inference."""
         from .relationship_builder import RelationshipBuilder

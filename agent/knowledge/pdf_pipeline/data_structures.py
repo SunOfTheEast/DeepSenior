@@ -141,6 +141,8 @@ class DraftQuestion:
     source_page: int = 0
     generation_model: str = ""
     review_status: str = "draft"
+    solution_paths: list[dict] = field(default_factory=list)  # [{method, card_ids, key_steps, solution_text}]
+    bound_card_ids: list[str] = field(default_factory=list)   # union of all paths
 
 
 @dataclass

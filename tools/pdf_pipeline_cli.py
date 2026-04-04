@@ -162,6 +162,14 @@ def cmd_questions(args: argparse.Namespace) -> None:
     print(f"Extracted {len(questions)} questions ({archetypes} archetypes, {exercises} exercises)")
 
 
+def cmd_solve(args: argparse.Namespace) -> None:
+    """Solve questions + bind cards via RAG tool calling."""
+    runner = _get_runner(args)
+    results = asyncio.run(runner.run_solve(batch_size=args.batch_size))
+    bound = sum(1 for r in results if r.all_card_ids)
+    print(f"Solved {len(results)} questions, {bound} bound to cards")
+
+
 def cmd_foundation(args: argparse.Namespace) -> None:
     """Foundation: detect book-external prerequisite concepts."""
     runner = _get_runner(args)
@@ -450,6 +458,11 @@ def main() -> None:
     p = sub.add_parser("questions", help="Pass 2c: extract questions")
     p.add_argument("--book", required=True)
 
+    # solve
+    p = sub.add_parser("solve", help="Solve questions + bind cards via RAG")
+    p.add_argument("--book", required=True)
+    p.add_argument("--batch-size", type=int, default=40, help="Questions per batch (default: 40)")
+
     # relate
     p = sub.add_parser("relate", help="Pass 3: cross-section relationships")
     p.add_argument("--book", required=True)
@@ -536,6 +549,7 @@ def main() -> None:
         "analyze": cmd_analyze,
         "generate": cmd_generate,
         "questions": cmd_questions,
+        "solve": cmd_solve,
         "relate": cmd_relate,
         "foundation": cmd_foundation,
         "think": cmd_think,

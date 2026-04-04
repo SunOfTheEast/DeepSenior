@@ -75,7 +75,7 @@ _SOLVER_SEARCH_SCHEMA: dict[str, Any] = {
 class SolverAgent(BaseAgent):
     """Solve questions using knowledge card RAG, producing card bindings as byproduct."""
 
-    _MAX_TOOL_ROUNDS = 5
+    _MAX_TOOL_ROUNDS = 8
 
     def __init__(self, card_index: Any, card_store: Any, **kwargs):
         super().__init__(
@@ -136,7 +136,8 @@ class SolverAgent(BaseAgent):
         all_card_ids: list[str] = []
         tool_call_log: list[dict] = []
 
-        # Tool calling loop
+        # Tool calling loop (with thinking mode for DeepSeek V3.2+)
+        thinking_kwargs = {"thinking": {"type": "enabled"}}
         for _round in range(self._MAX_TOOL_ROUNDS):
             resp: ToolUseResponse = await complete_with_tools(
                 prompt="",
@@ -146,7 +147,7 @@ class SolverAgent(BaseAgent):
                 model=self.model,
                 api_key=self.api_key,
                 base_url=self.base_url,
-                temperature=0.3,
+                **thinking_kwargs,
             )
 
             if not resp.has_tool_calls:
@@ -155,8 +156,8 @@ class SolverAgent(BaseAgent):
                     question_id, resp.content, all_card_ids,
                 )
 
-            # Process tool calls
-            messages.append({
+            # Process tool calls — pass back reasoning_content for thinking continuity
+            assistant_msg: dict[str, Any] = {
                 "role": "assistant",
                 "content": resp.content,
                 "tool_calls": [
@@ -170,7 +171,10 @@ class SolverAgent(BaseAgent):
                     }
                     for tc in resp.tool_calls
                 ],
-            })
+            }
+            if resp.reasoning_content:
+                assistant_msg["reasoning_content"] = resp.reasoning_content
+            messages.append(assistant_msg)
 
             for tc in resp.tool_calls:
                 query = tc.arguments.get("query", "")
@@ -222,6 +226,7 @@ class SolverAgent(BaseAgent):
 
         all_card_ids: list[str] = []
 
+        thinking_kwargs = {"thinking": {"type": "enabled"}}
         for _round in range(self._MAX_TOOL_ROUNDS):
             resp = await complete_with_tools(
                 prompt="",
@@ -231,7 +236,7 @@ class SolverAgent(BaseAgent):
                 model=self.model,
                 api_key=self.api_key,
                 base_url=self.base_url,
-                temperature=0.2,
+                **thinking_kwargs,
             )
 
             if not resp.has_tool_calls:
@@ -239,7 +244,7 @@ class SolverAgent(BaseAgent):
                     question_id, resp.content, all_card_ids,
                 )
 
-            messages.append({
+            assistant_msg: dict[str, Any] = {
                 "role": "assistant",
                 "content": resp.content,
                 "tool_calls": [
@@ -253,7 +258,10 @@ class SolverAgent(BaseAgent):
                     }
                     for tc in resp.tool_calls
                 ],
-            })
+            }
+            if resp.reasoning_content:
+                assistant_msg["reasoning_content"] = resp.reasoning_content
+            messages.append(assistant_msg)
 
             for tc in resp.tool_calls:
                 query = tc.arguments.get("query", "")
