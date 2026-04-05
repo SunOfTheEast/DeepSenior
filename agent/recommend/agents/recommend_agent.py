@@ -14,6 +14,7 @@ RecommendAgent - 推荐决策 LLM
 
 import json
 import re
+from typing import Any
 
 from agent.base_agent import BaseAgent
 from agent.context_governance.assembler import assemble
@@ -114,6 +115,106 @@ class RecommendAgent(BaseAgent):
         return self._parse(response, ctx)
 
     # -------------------------------------------------------------------------
+    # Tool-Use 模式
+    # -------------------------------------------------------------------------
+
+    async def decide_with_tools(
+        self,
+        ctx: RecommendContext,
+        tool_registry: Any,
+        max_tool_rounds: int = 5,
+    ) -> dict:
+        """
+        Tool-use 循环模式推荐决策。
+
+        LLM 通过调用 tools 按需获取学生状态、题目信息，然后输出推荐。
+        异常时 fallback 到单次调用的 decide()。
+        """
+        system_prompt = self.get_prompt("system")
+        decide_template = self.get_prompt("decide")
+
+        if not system_prompt or not decide_template or tool_registry is None:
+            return await self.decide(ctx)
+
+        # 基础 context（极轻量，只有当次会话摘要）
+        user_prompt = decide_template.format(
+            source=ctx.source.value,
+            outcome=self._extract_outcome(ctx),
+            current_chapter=ctx.current_chapter,
+            current_tags=", ".join(ctx.current_tags) or "（无）",
+            current_problem_id=ctx.current_problem_id or "（无）",
+            hints_given=ctx.session_export.get("total_hints_given", 0),
+            total_attempts=ctx.session_export.get("total_attempts", 1),
+            methods_used=", ".join(ctx.session_export.get("methods_used", [])) or "未知",
+            error_types=", ".join(ctx.session_export.get("error_types_seen", [])) or "无",
+        )
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        tools = tool_registry.get_tool_schemas()
+
+        for round_idx in range(max_tool_rounds):
+            try:
+                result = await self.call_llm_with_tools(
+                    user_prompt="",
+                    system_prompt="",
+                    tools=tools,
+                    tool_choice="auto",
+                    messages=messages,
+                    temperature=0.3,
+                    stage=f"recommend_tool_round_{round_idx}",
+                )
+            except Exception as exc:
+                self.logger.warning(f"Tool-use round {round_idx} failed: {exc}, falling back")
+                return await self.decide(ctx)
+
+            if not result.has_tool_calls:
+                return self._parse(result.content, ctx)
+
+            # Append assistant message with tool calls
+            messages.append({
+                "role": "assistant",
+                "content": result.content or None,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for tc in result.tool_calls
+                ],
+            })
+
+            # Execute tools and append results
+            for tc in result.tool_calls:
+                tool_result = await tool_registry.execute(tc.name, tc.arguments)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": tool_result,
+                })
+
+        # Max rounds exceeded: force final response
+        self.logger.warning(f"Tool-use exceeded {max_tool_rounds} rounds, forcing final")
+        try:
+            final = await self.call_llm(
+                user_prompt="",
+                system_prompt="",
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.3,
+                stage="recommend_tool_final",
+            )
+            return self._parse(final, ctx)
+        except Exception:
+            return await self.decide(ctx)
+
+    # -------------------------------------------------------------------------
     # Parsing
     # -------------------------------------------------------------------------
 
@@ -142,6 +243,8 @@ class RecommendAgent(BaseAgent):
             "concept_to_review": data.get("concept_to_review"),
             "retry_method": data.get("retry_method"),
             "explanation": data.get("explanation", "继续练习吧！"),
+            "recommended_problems": data.get("recommended_problems", []),
+            "reasoning": data.get("reasoning", ""),
         }
 
     def _rule_based_decide(self, ctx: RecommendContext) -> dict:

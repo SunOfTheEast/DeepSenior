@@ -224,20 +224,32 @@ class MemoryStore:
             json.dump(index, f, ensure_ascii=False, indent=2)
         tmp_path.replace(path)
 
+    @staticmethod
+    def _build_index_entry(memory: EpisodicMemory) -> dict:
+        """构建完整的 index entry（供倒排索引检索）。"""
+        narrative = getattr(memory, "session_narrative", "") or ""
+        return {
+            "memory_id": memory.memory_id,
+            "created_at": memory.created_at.isoformat(),
+            "source": memory.source.value,
+            "problem_id": memory.problem_id,
+            "chapter": memory.chapter,
+            "outcome": memory.outcome,
+            # 扩展字段（Phase 3 结构化检索）
+            "tags": list(memory.tags or []),
+            "methods_used": list(memory.methods_used or []),
+            "method_slot_matched": memory.method_slot_matched,
+            "error_types": list(memory.error_types or []),
+            "solution_id": memory.solution_id,
+            "session_id": memory.session_id,
+            "narrative_preview": narrative[:80] if narrative else "",
+        }
+
     def _upsert_episodic_index(self, memory: EpisodicMemory) -> None:
         student_id = memory.student_id
         index = self._load_episodic_index(student_id)
         items = [i for i in index.get("items", []) if i.get("memory_id") != memory.memory_id]
-        items.append(
-            {
-                "memory_id": memory.memory_id,
-                "created_at": memory.created_at.isoformat(),
-                "source": memory.source.value,
-                "problem_id": memory.problem_id,
-                "chapter": memory.chapter,
-                "outcome": memory.outcome,
-            }
-        )
+        items.append(self._build_index_entry(memory))
         items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         index["items"] = items
         self._save_episodic_index(student_id, index)
@@ -250,19 +262,47 @@ class MemoryStore:
             self._save_episodic_index(student_id, index)
 
     def _rebuild_episodic_index(self, student_id: str, memories: list[EpisodicMemory]) -> None:
-        items = [
-            {
-                "memory_id": m.memory_id,
-                "created_at": m.created_at.isoformat(),
-                "source": m.source.value,
-                "problem_id": m.problem_id,
-                "chapter": m.chapter,
-                "outcome": m.outcome,
-            }
-            for m in memories
-        ]
+        items = [self._build_index_entry(m) for m in memories]
         index = {"version": 1, "items": items}
         self._save_episodic_index(student_id, index)
+
+    # =========================================================================
+    # Turns (L0 原始对话)
+    # =========================================================================
+
+    def save_turns(self, student_id: str, session_id: str, turns: list[dict]) -> None:
+        """持久化原始对话 turns。"""
+        path = self._turns_path(student_id, session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(turns, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(path)
+        self.logger.debug(f"Turns saved: {student_id}/{session_id} ({len(turns)} turns)")
+
+    def load_turns(self, student_id: str, session_id: str) -> list[dict] | None:
+        path = self._turns_path(student_id, session_id)
+        if not path.exists():
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.warning(f"Failed to load turns {student_id}/{session_id}: {e}")
+            return None
+
+    def has_turns(self, student_id: str, session_id: str) -> bool:
+        return self._turns_path(student_id, session_id).exists()
+
+    # =========================================================================
+    # Private
+    # =========================================================================
+
+    def _turns_dir(self, student_id: str) -> Path:
+        return self.base_dir / student_id / "turns"
+
+    def _turns_path(self, student_id: str, session_id: str) -> Path:
+        return self._turns_dir(student_id) / f"{session_id}.json"
 
     def _episodic_dir(self, student_id: str) -> Path:
         return self.base_dir / student_id / "episodic"

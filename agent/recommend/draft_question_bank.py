@@ -24,10 +24,16 @@ logger = get_logger("Recommend.DraftQuestionBank")
 class DraftQuestionBank(ProblemBankBase):
     """ProblemBank backed by DraftQuestion YAML files from the PDF pipeline."""
 
-    def __init__(self, drafts_root: str | Path | None = None):
+    def __init__(
+        self,
+        drafts_root: str | Path | None = None,
+        embedding_api_key: str | None = None,
+    ):
         self._drafts_root = Path(drafts_root) if drafts_root else Path("content/drafts")
         self._questions: list[dict] = []
         self._loaded = False
+        self._embedding_api_key = embedding_api_key
+        self._embedding_index = None  # lazy init
 
     def _ensure_loaded(self) -> None:
         if self._loaded:
@@ -45,6 +51,20 @@ class DraftQuestionBank(ProblemBankBase):
                     self._questions.append(data)
         self._loaded = True
         logger.info("Loaded %d draft questions from %s", len(self._questions), self._drafts_root)
+        self._init_embedding_index()
+
+    def _init_embedding_index(self) -> None:
+        """初始化 embedding 索引（需要 ZHIPUAI_API_KEY）。"""
+        import os
+        api_key = self._embedding_api_key or os.environ.get("ZHIPUAI_API_KEY", "")
+        if not api_key or not self._questions:
+            return
+        from .problem_index import EmbeddingProblemIndex
+        cache_dir = self._drafts_root.parent / "data" / ".problem_embedding_cache"
+        self._embedding_index = EmbeddingProblemIndex(
+            api_key=api_key, cache_dir=str(cache_dir),
+        )
+        self._embedding_index.build(self._questions)
 
     async def query(self, query: ProblemQuery) -> list[ProblemContext]:
         self._ensure_loaded()
@@ -105,6 +125,42 @@ class DraftQuestionBank(ProblemBankBase):
             if len(results) >= 3:
                 break
         return results
+
+    async def find_similar(
+        self,
+        problem_id: str,
+        top_k: int = 5,
+        exclude_ids: list[str] | None = None,
+    ) -> list[ProblemContext]:
+        """Embedding 语义相似题召回。"""
+        self._ensure_loaded()
+        if self._embedding_index is None:
+            return []
+        results = self._embedding_index.find_similar(problem_id, top_k, exclude_ids)
+        q_map = {q["question_id"]: q for q in self._questions}
+        return [
+            self._to_problem_context(q_map[qid])
+            for qid, _ in results
+            if qid in q_map
+        ]
+
+    async def search_by_text(
+        self,
+        query: str,
+        top_k: int = 5,
+        exclude_ids: list[str] | None = None,
+    ) -> list[ProblemContext]:
+        """自然语言语义搜索题目。"""
+        self._ensure_loaded()
+        if self._embedding_index is None:
+            return []
+        results = self._embedding_index.search(query, top_k, exclude_ids)
+        q_map = {q["question_id"]: q for q in self._questions}
+        return [
+            self._to_problem_context(q_map[qid])
+            for qid, _ in results
+            if qid in q_map
+        ]
 
     @staticmethod
     def _to_problem_context(q: dict) -> ProblemContext:

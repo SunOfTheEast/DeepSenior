@@ -1,6 +1,6 @@
 # DeepTutor 系统文档（重写版）
 
-> 更新时间：2026-04-04（PDF 管线 v2 全链路：拆书→生卡→提题→聚类→解题绑卡→语义搜索→Tutor 消费）
+> 更新时间：2026-04-05（Recommend Tool-Use 升级：9 tools + EmbeddingProblemIndex 语义召回 + 推荐记录持久化 + 候选题规则排序 + MasteryGraph 缓存持久化）
 > 审计范围：`agent/**/*.py`（Tutor / Review / Memory / Recommend / Progress）
 > 文档目标：用"当前真实代码行为"描述系统，不混入未落地设计
 > 架构宪法：见 [`doc/TUTOR_CONSTITUTION.md`](./doc/TUTOR_CONSTITUTION.md)
@@ -64,8 +64,8 @@ DeepTutor 的核心架构建立在两大支柱之上：
 | Tutor | 提交判题（v2 管线）、Think→Act 对话推进（自由策略 + Listener 模式） | `TutorSession` | `export_session()` |
 | Review | 错误回放、多解法演示、两阶段理解验证、重试信号 | `ReviewSession` | `close_session()/export_session()` |
 | Knowledge | 三级卡片树 + 二阶段 RAG 检索 + 概念注册 + Thought 深层语义索引 + 审计发布层 + PDF 拆书管线 | `ConceptRegistry` + `ThoughtStore` + `AuditStore` + `SolutionLinkStore` + `DraftStore` | `CardRetrieveResult` / `ThoughtEntity` / `RagAuditEntry` |
-| Memory | 情节记忆入库、语义蒸馏、concept/solution/slot 三维度熟练度更新 | `SemanticMemory` + Episodic files | `get_semantic()/get_student_context()` |
-| Recommend | 结合 session + memory 决策推荐类型，并查题库或降级 | 无长驻会话 | `Recommendation` |
+| Memory | 五层记忆（L0 turns → L1 episodic + narrative → L1.5 digest → L2 semantic）、结构化/语义检索、知识图谱掌握度推断 | `SemanticMemory` + Episodic + Turns + Digests | `get_semantic()/get_student_context()/query_episodes()/search_memory()/get_mastery_view()` |
+| Recommend | Tool-Use 驱动推荐：9 个 tools（画像/图谱/题库）+ LLM 决策循环 + embedding 语义召回 + 规则排序 + 推荐记录持久化 | `RecommendationStore` | `Recommendation` + `get_recent_recommendations()` |
 | Progress | 遗忘曲线驱动计划 + 阶段总结 + next_review_at 回写 | 无长驻会话 | `TaskPlan` / `ProgressSummary` |
 
 ### 2.1 基础设施层 `agent/infra/`（2026-03-22 新建）
@@ -305,13 +305,36 @@ unified 关键行为（当前代码）：
 2. 行为结果：`retry_triggered/retry_method`
 3. 学习质量：`understanding_summary`（method -> understood/partial/not_understood）
 
-### 3.5 Memory 语义层核心结构
+### 3.5 Memory 分层存储与核心结构
 
-1. `concept_mastery[concept_id]`：Progress 直接消费。
+**五层存储模型**：
+
+| 层级 | 数据结构 | 存储路径 | 说明 |
+|------|---------|---------|------|
+| L0 | 原始对话 turns | `{student}/turns/{session_id}.json` | 永久保存，用户可自行清理 |
+| L1 | `EpisodicMemory` + `session_narrative` | `{student}/episodic/{id}.json` | 结构化快照 + LLM 从 L0 提炼的定性摘要（情绪/风格/卡点质感） |
+| L1.5 | `MemoryDigest` | `{student}/digests/{weekly,chapter}/{key}.json` | LLM 聚合的自然语言摘要，按时间（周）和章节两维度，支持 embedding 语义搜索 |
+| L2 | `SemanticMemory` | `{student}/semantic.json` | 长期画像，每次 commit 增量更新 |
+| Graph | `MasteryGraph` + `StudentMasteryView` | 查询时实时计算（无持久化） | 基于 prerequisite DAG + 等权聚合，提供 `effective_mastery` / `bottlenecks` / `ready_to_learn` |
+
+**SemanticMemory 语义层核心字段**：
+
+1. `concept_mastery[concept_id]`：Progress 直接消费；MasteryGraph 叠加图推断提供 `effective_mastery`。
 2. `solution_mastery[solution_id]`：记录 question 下不同 solution 分叉掌握度。
 3. `slot_mastery[slot_id]`：`MethodSlotMastery`（use_count / success_count / success_rate / last_used_at），记录标准化方法 slot 维度的掌握度。由 `episode.method_slot_matched` 自动驱动。
 4. `pending_audit_tasks[]`：替代解法索引补齐任务池。审计条目同步持久化到 `AuditStore`（JSONL），并可通过 replay 在发布态索引补齐后回放。
 5. `index_status`：`pending/ready/rejected`，决定是否允许 solution->concept bridge；`ready` 可来自正式 `solution_card_links` 回填。
+
+**检索机制**：
+
+- **结构化检索**（`MemoryIndex`）：内存倒排索引，基于扩展的 `_index.json`（含 tags / method_slot / error_types / methods_used），支持多维 AND 过滤。
+- **语义检索**（`EmbeddingDigestIndex`）：对 L1.5 digest 的 summary 做 ZhipuAI embedding-3 向量化 + cosine 搜索。通过 `search_memory(student_id, query)` 入口，结合语义搜索 digest + 结构化补查未 digest 的近期 episode。
+
+**图感知掌握度**（`MasteryGraph`）：
+
+- 从 `ConceptRegistry` 的 prerequisite DAG 构建反向索引（parent → children）。
+- `StudentMasteryView.effective_mastery(concept_id)` 实时计算：叶子节点取直接观测 + Ebbinghaus 衰减；父节点取 max(直接值, 子节点等权平均)。
+- `bottlenecks()` / `ready_to_learn()` / `chapter_mastery()` 等图感知查询供 Progress / Recommend 消费。
 
 ### 3.6 PathEvaluationResult
 
@@ -359,22 +382,57 @@ async chat(session_id, student_message) -> dict[str, Any]
 ### 4.3 MemoryManager
 
 ```python
-async commit_session(student_id, episode, run_distillation=True) -> SemanticMemory
+# 写入
+async commit_session(student_id, episode, run_distillation=True, turns=None) -> SemanticMemory
+  # turns: list[dict] — 原始对话(L0)，来自 session.interaction_history
 
 build_episodic_from_tutor(student_id, export) -> EpisodicMemory   # @staticmethod
 build_episodic_from_review(student_id, export) -> EpisodicMemory  # @staticmethod
 
-get_student_context(student_id, include_recent_episodes=True) -> str
+# 读取：上下文
+get_student_context(student_id, include_recent_episodes=True, include_digests=True) -> str
 get_semantic(student_id) -> SemanticMemory | None
 get_recent_episodes(student_id, limit=10, source=None) -> list[EpisodicMemory]
+
+# 读取：结构化检索
+query_episodes(student_id, *, concept_ids, chapter, outcome, method_slot,
+               error_types, source, since, until, limit=20, load_full=False) -> list
+
+# 读取：图感知掌握度
+get_mastery_view(student_id) -> StudentMasteryView | None
+
+# Digest 层
+async generate_digests(student_id, force=False) -> list[MemoryDigest]
+get_digests(student_id, digest_type=None) -> list[MemoryDigest]
+search_memory(student_id, query, top_k=5) -> dict  # {"digests": [...], "recent_undigested": [...]}
 ```
 
 ### 4.4 RecommendManager
 
 ```python
+# 推荐入口（tool-use 驱动）
 async recommend_after_tutor(student_id, session_export, working_memory_limit=10) -> Recommendation
 async recommend_after_review(student_id, session_export, working_memory_limit=10) -> Recommendation
+
+# 推荐记录
+get_recent_recommendations(student_id, limit=10) -> list[dict]
 ```
+
+**内部流程**：`_recommend(ctx)` 构建 `RecommendToolRegistry`（9 tools）→ `RecommendAgent.decide_with_tools(ctx, tool_registry)` tool-use 循环（最多 5 轮）→ LLM 通过 tools 按需查询画像/图谱/题库 → 输出推荐决策 → `_score_llm_candidates()` 规则排序 → `_save_recommendation()` 持久化。
+
+**9 个 Tools**：
+
+| 维度 | Tool | 数据源 |
+|------|------|--------|
+| 学生 | `get_student_profile` | SemanticMemory.to_recommend_snapshot() |
+| 学生 | `get_concept_mastery` | StudentMasteryView.effective_mastery() |
+| 学生 | `get_concept_history` | MemoryIndex.query(concept_ids) |
+| 图谱 | `get_bottlenecks` | StudentMasteryView.bottlenecks() |
+| 图谱 | `get_ready_to_learn` | StudentMasteryView.ready_to_learn() |
+| 图谱 | `get_chapter_mastery` | StudentMasteryView.chapter_mastery() |
+| 题目 | `get_problem_profile` | DraftQuestionBank.get_by_id() |
+| 题目 | `find_similar_problems` | EmbeddingProblemIndex.find_similar/search() |
+| 题目 | `find_problems_by_tag` | DraftQuestionBank.query() |
 
 ### 4.5 ProgressManager
 
@@ -959,22 +1017,25 @@ SHOW_SOLUTION
 函数调用链（`agent/memory/memory_manager.py`）：
 
 ```text
-commit_session(student_id, episode, run_distillation=True)
+commit_session(student_id, episode, run_distillation=True, turns=None)
   ├─ [student_id != episode.student_id?] → raise ValueError     ← 一致性校验
   ├─ [has_episodic?] → 幂等返回 semantic
   │
+  ├─ [turns 非空?] store.save_turns(student_id, session_id, turns)  # L0 持久化
   ├─ store.save_episodic(episode)                                 # MemoryStore I/O
-  │    └─ 原子写入 tmp → rename + _upsert_episodic_index
+  │    └─ 原子写入 tmp → rename + _upsert_episodic_index（含扩展字段）
   ├─ store.load_or_create_semantic(student_id)
   │
   ├─ [run_distillation=false]
   │    └─ _update_counters(semantic, episode) → save_semantic
   │
   └─ [run_distillation=true]
-       ├─ skill: distill_memory → MemoryDistillerAgent.distill()
+       ├─ skill: distill_memory → MemoryDistillerAgent.distill(episode, semantic, turns=turns)
        │    ├─ current_semantic.to_distill_snapshot(target_tags)   ← 任务快照
-       │    ├─ assemble({episode, current_profile, current_mastery_summary}, MEMORY_DISTILL_POLICY)
-       │    └─ 返回 MemoryUpdate
+       │    ├─ _format_turns(turns) → turns_context               ← L0 原始对话格式化
+       │    ├─ assemble({current_profile, current_mastery_summary, turns_context}, MEMORY_DISTILL_POLICY)
+       │    └─ 返回 MemoryUpdate（含 session_narrative）
+       ├─ [update.session_narrative?] episode.session_narrative = ... + re-save episodic
        ├─ _apply_update(semantic, episode, update)
        │    ├─ _update_counters(semantic, episode)
        │    │    └─ total_sessions++, total_hints_given+=, total_problems_solved+=
@@ -1020,14 +1081,20 @@ flowchart TD
     A0 -->|yes| LOCK["async with _get_student_lock(student_id)"]
     LOCK --> B{"has_episodic? (幂等检查)"}
     B -->|yes| C[幂等返回semantic]
-    B -->|no| D[save_episodic]
+    B -->|no| T0{"turns 非空?"}
+    T0 -->|yes| T1[save_turns L0]
+    T0 -->|no| D
+    T1 --> D[save_episodic]
 
     D --> E[load_or_create_semantic]
     E --> F{run_distillation?}
     F -->|no| G["_update_counters + save_semantic"]
-    F -->|yes| H["_distill -> MemoryDistillerAgent.distill"]
+    F -->|yes| H["_distill(episode, semantic, turns=turns)"]
 
-    H --> I[_apply_update]
+    H --> H1{"session_narrative?"}
+    H1 -->|yes| H2["episode.session_narrative = ... + re-save"]
+    H1 -->|no| I
+    H2 --> I[_apply_update]
     I --> J[concept_updates 应用]
     I --> K[_update_solution_mastery]
     K --> L{index_status==ready?}
@@ -1038,6 +1105,7 @@ flowchart TD
     M --> P[save_semantic]
     N --> P
     O --> P
+    P --> Q["_index.invalidate(student_id)"]
 ```
 
 替代解法门控规则：
@@ -1048,7 +1116,7 @@ flowchart TD
 
 ---
 
-### 5.9 Recommend 推荐流
+### 5.9 Recommend 推荐流（Tool-Use 驱动）
 
 函数调用链（`agent/recommend/recommend_manager.py` + `agent/recommend/agents/recommend_agent.py`）：
 
@@ -1062,29 +1130,50 @@ recommend_after_review(student_id, session_export, ...)
   │    └─ → RecommendContext
   │
   └─ _recommend(ctx)
-       ├─ skill: decide_recommendation → RecommendAgent.decide(ctx)
-       │    ├─ ctx.semantic_memory.to_recommend_snapshot(ctx.current_tags)  ← 任务快照
-       │    ├─ assemble({student_profile, weak_concepts, recent_problems}, RECOMMEND_POLICY)
-       │    ├─ _extract_outcome(ctx)                                  ← 已修复 gave_up 漏判
-       │    │    └─ 同时检查 outcome + status，显式处理 gave_up/abandoned
-       │    ├─ call_llm(user_prompt, system_prompt, json)
-       │    ├─ _parse(response, ctx)
-       │    │    └─ 解析 recommendation_type/target_tags/difficulty/explanation
-       │    └─ [无 prompt 降级] _rule_based_decide(ctx)
-       │         ├─ [review 来源] 按 understanding_quality 分档
-       │         └─ [tutor 来源] 按 outcome + hints 分档
+       │
+       ├─ 构建 RecommendToolRegistry(student_id, memory, bank, ...)
+       │    └─ 注册 9 个 tools（画像/图谱/题库三维度）
+       │
+       ├─ RecommendAgent.decide_with_tools(ctx, tool_registry, max_rounds=5)
+       │    │
+       │    ├─ messages = [system(含必查项/条件查项/禁止/冷启动), user(session摘要)]
+       │    │
+       │    └─ for round in range(max_rounds):  ← tool-use 循环
+       │         ├─ call_llm_with_tools(messages, tools)
+       │         ├─ [无 tool_calls] → _parse(content) → 返回决策
+       │         ├─ [有 tool_calls] → 执行 tools → append results → 继续循环
+       │         │
+       │         │  典型调用链：
+       │         │    round 0: get_student_profile() + get_concept_mastery([tags])
+       │         │    round 1: get_bottlenecks() 或 find_similar_problems(pid)
+       │         │    round 2: 输出最终 JSON 决策
+       │         │
+       │         └─ [异常] fallback → RecommendAgent.decide(ctx) 单次调用
        │
        ├─ [REST / RETRY_WITH_METHOD / REVIEW_CONCEPT]
-       │    └─ 直接返回 Recommendation（不查题库）
+       │    ├─ _save_recommendation() 持久化
+       │    └─ 直接返回 Recommendation
        │
-       ├─ [需要题库] _build_query(decision, ctx) → ProblemQuery
-       │    └─ ProblemBankBase.query(query)
+       ├─ [LLM 通过 tool 找到了推荐题目 recommended_problems]
+       │    ├─ _score_llm_candidates(ctx, candidates) ← 规则排序
+       │    │    ├─ 命中 bottleneck → +2.0
+       │    │    ├─ 命中 ready_to_learn → +1.5
+       │    │    ├─ 最近推荐过 → -3.0
+       │    │    └─ 取 top-1
+       │    ├─ _save_recommendation() 持久化
+       │    └─ 返回 Recommendation
+       │
+       ├─ [回退到传统查询] _build_query → ProblemBankBase.query()
        │
        └─ [题库为空] _fallback(ctx, decision, original_query)
-            ├─ 放宽难度重试 → ProblemBankBase.query(relaxed_query)
-            ├─ [仍空] ctx.get_weak_tags() → REVIEW_CONCEPT
+            ├─ 放宽难度重试
+            ├─ [仍空] → REVIEW_CONCEPT
             └─ [无薄弱点] → REST
 ```
+
+**语义召回**：`find_similar_problems` tool 底层调用 `EmbeddingProblemIndex`（ZhipuAI embedding-3 + cosine），支持 problem_id 相似搜索和自然语言查询两种模式。`DraftQuestionBank` 在首次加载题目后自动构建 embedding 索引（磁盘缓存）。
+
+**推荐记录**：每次推荐后通过 `RecommendationStore` 持久化到 `data/memory/{student_id}/recommendations/`，用于去重和历史追溯。
 
 ---
 

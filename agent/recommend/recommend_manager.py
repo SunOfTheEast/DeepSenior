@@ -16,9 +16,11 @@ RecommendManager - 推荐调度器
 题库接口（ProblemBankBase）由外部注入，NullProblemBank 为默认占位实现。
 """
 
+import re
 from typing import Any, Callable
 
 from agent.infra.logging import get_logger
+from agent.knowledge import build_card_retriever
 from agent.knowledge.data_structures import (
     CardRetrieveRequest,
     RetrievalConsumer,
@@ -34,7 +36,9 @@ from .data_structures import (
     RecommendationType,
 )
 from .problem_bank import NullProblemBank, ProblemBankBase
+from .recommendation_store import RecommendationStore
 from .skills.registry import RecommendSkillRegistry
+from .tools.tool_registry import RecommendToolRegistry
 
 
 class RecommendManager:
@@ -60,7 +64,20 @@ class RecommendManager:
         self.logger = get_logger("RecommendManager")
         self._memory = memory_manager
         self._bank = problem_bank or NullProblemBank()
-        self._retrieve_cards = retrieve_cards
+        self._owned_card_retriever = None
+        if retrieve_cards:
+            self._retrieve_cards = retrieve_cards
+        else:
+            enable_llm_agents = bool(api_key and base_url and api_key != "mock" and base_url != "mock")
+            self._owned_card_retriever = build_card_retriever(
+                api_key=api_key,
+                base_url=base_url,
+                language=language,
+                api_version=api_version,
+                binding=binding,
+                enable_llm_agents=enable_llm_agents,
+            )
+            self._retrieve_cards = self._owned_card_retriever.retrieve
         self._skill_registry = skill_registry or RecommendSkillRegistry(
             api_key=api_key,
             base_url=base_url,
@@ -69,6 +86,8 @@ class RecommendManager:
             binding=binding,
         )
         self._decide_recommendation = self._skill_registry.get("decide_recommendation")
+        self._recommendation_store = RecommendationStore()
+        self._recommend_agent = self._skill_registry._agent  # direct access for tool-use
 
     # =========================================================================
     # 公开入口
@@ -144,8 +163,20 @@ class RecommendManager:
     # =========================================================================
 
     async def _recommend(self, ctx: RecommendContext) -> Recommendation:
-        # 1. LLM 决策
-        decision = await self._decide_recommendation(ctx)
+        # 1. 构建 tool registry
+        tool_registry = RecommendToolRegistry(
+            student_id=ctx.student_id,
+            memory_manager=self._memory,
+            problem_bank=self._bank,
+            current_problem_id=ctx.current_problem_id,
+            current_tags=ctx.current_tags,
+            current_chapter=ctx.current_chapter,
+        )
+
+        # 2. LLM tool-use 决策
+        decision = await self._recommend_agent.decide_with_tools(
+            ctx, tool_registry=tool_registry,
+        )
         rec_type: RecommendationType = decision["recommendation_type"]
 
         self.logger.info(
@@ -153,43 +184,65 @@ class RecommendManager:
             f"(source={ctx.source.value})"
         )
 
-        # 2. 不需要查题库的类型直接返回
+        # 3. 不需要查题库的类型直接返回
         if rec_type == RecommendationType.REST:
-            return Recommendation(
-                type=rec_type,
-                explanation=decision["explanation"],
-            )
+            result = Recommendation(type=rec_type, explanation=decision["explanation"])
+            self._save_recommendation(ctx.student_id, result)
+            return result
 
         if rec_type == RecommendationType.RETRY_WITH_METHOD:
-            return Recommendation(
+            result = Recommendation(
                 type=rec_type,
                 explanation=decision["explanation"],
                 retry_method=decision.get("retry_method"),
             )
+            self._save_recommendation(ctx.student_id, result)
+            return result
 
         if rec_type == RecommendationType.REVIEW_CONCEPT:
             concept = decision.get("concept_to_review")
             summaries = await self._fetch_concept_cards(ctx, concept)
-            return Recommendation(
+            result = Recommendation(
                 type=rec_type,
                 explanation=decision["explanation"],
                 concept_to_review=concept,
                 concept_card_summaries=summaries,
             )
+            self._save_recommendation(ctx.student_id, result)
+            return result
 
-        # 3. 需要题库的类型：构建查询
+        # 4. LLM 可能直接通过 tool 找到了推荐题目
+        llm_problems = decision.get("recommended_problems", [])
+        if llm_problems:
+            # 规则排序
+            scored = await self._score_llm_candidates(ctx, llm_problems)
+            if scored:
+                best = scored[0]
+                problem = await self._bank.get_by_id(best["problem_id"])
+                if problem:
+                    result = Recommendation(
+                        type=rec_type,
+                        explanation=decision["explanation"],
+                        problem=problem,
+                    )
+                    self._save_recommendation(ctx.student_id, result)
+                    return result
+
+        # 5. 回退到传统查询
         query = self._build_query(decision, ctx)
         problems = await self._bank.query(query)
 
         if problems:
-            return Recommendation(
+            result = Recommendation(
                 type=rec_type,
                 explanation=decision["explanation"],
                 problem=problems[0],
                 query_used=query,
             )
+            self._save_recommendation(ctx.student_id, result)
+            return result
 
-        # 4. 题库为空：尝试降级
+        # 6. 题库为空：降级
         return await self._fallback(ctx, decision, query)
 
     def _build_query(
@@ -249,10 +302,12 @@ class RecommendManager:
         weak = ctx.get_weak_tags()
         if weak:
             self.logger.info(f"[{ctx.student_id}] Fallback: recommend review_concept {weak[0]}")
+            summaries = await self._fetch_concept_cards(ctx, weak[0])
             return Recommendation(
                 type=RecommendationType.REVIEW_CONCEPT,
                 explanation=f"暂时没有找到合适的新题，先复习一下「{weak[0]}」这个知识点吧。",
                 concept_to_review=weak[0],
+                concept_card_summaries=summaries,
                 fallback_used=True,
             )
 
@@ -271,18 +326,20 @@ class RecommendManager:
         if not self._retrieve_cards or not concept:
             return []
         try:
+            focus_terms = self._build_recommend_focus_terms(ctx, concept)
             request = CardRetrieveRequest(
                 consumer=RetrievalConsumer.RECOMMEND.value,
                 question_id=ctx.current_problem_id or None,
-                active_solution_id=None,
+                active_solution_id=ctx.session_export.get("solution_id"),
                 chapter=ctx.current_chapter,
                 topic=None,
                 problem_text=None,
                 student_work=None,
-                student_approach=None,
-                target_card_ids=[],
-                focus_terms=[concept],
+                student_approach=ctx.session_export.get("alternative_method") or ctx.session_export.get("retry_method"),
+                target_card_ids=list(ctx.current_tags),
+                focus_terms=focus_terms,
                 retrieval_goal=RetrievalGoal.REINFORCEMENT.value,
+                session_id=ctx.session_export.get("session_id"),
                 top_k=2,
             )
             bundle = await self._retrieve_cards(request)
@@ -295,3 +352,106 @@ class RecommendManager:
         except Exception as exc:
             self.logger.warning(f"[{ctx.student_id}] RAG fetch for recommend failed: {exc}")
             return []
+
+    @staticmethod
+    def _build_recommend_focus_terms(
+        ctx: RecommendContext,
+        concept: str,
+        *,
+        max_terms: int = 5,
+    ) -> list[str]:
+        raw_terms = [
+            concept,
+            ctx.session_export.get("alternative_method") or "",
+            ctx.session_export.get("retry_method") or "",
+            *ctx.current_tags[:2],
+        ]
+        terms: list[str] = []
+        seen: set[str] = set()
+        for text in raw_terms:
+            for chunk in re.split(r"[\s,，。！？；：:、（）()\n]+", str(text or "").strip()):
+                cleaned = chunk.strip()
+                if len(cleaned) < 2:
+                    continue
+                normalized = cleaned[:48]
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                terms.append(normalized)
+                if len(terms) >= max_terms:
+                    return terms
+        return [concept[:48]]
+
+    # =========================================================================
+    # 推荐记录持久化
+    # =========================================================================
+
+    def _save_recommendation(self, student_id: str, rec: Recommendation) -> None:
+        try:
+            self._recommendation_store.save_recommendation(student_id, {
+                "type": rec.type.value if rec.type else "",
+                "problem_id": rec.problem.problem_id if rec.problem else "",
+                "explanation": rec.explanation,
+                "recommended_problems": getattr(rec, "recommended_problems", []),
+            })
+        except Exception as exc:
+            self.logger.warning(f"[{student_id}] Failed to save recommendation: {exc}")
+
+    def get_recent_recommendations(
+        self, student_id: str, limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        return self._recommendation_store.get_recent_recommendations(student_id, limit)
+
+    # =========================================================================
+    # 候选题排序
+    # =========================================================================
+
+    async def _score_llm_candidates(
+        self,
+        ctx: RecommendContext,
+        candidates: list[dict],
+    ) -> list[dict]:
+        """
+        对 LLM 推荐的候选题做规则打分排序。
+
+        打分维度：
+          - 命中 bottleneck concept → +2.0
+          - 命中 ready_to_learn → +1.5
+          - 涉及 persistent_error → +1.0
+          - 最近推荐过 → -3.0
+        """
+        mastery_view = self._memory.get_mastery_view(ctx.student_id)
+        recently_recommended = self._recommendation_store.get_recently_recommended_problem_ids(
+            ctx.student_id, limit=20,
+        )
+
+        bottleneck_ids = set(mastery_view.bottlenecks()) if mastery_view else set()
+        ready_ids = set(mastery_view.ready_to_learn()) if mastery_view else set()
+        error_types = set()
+        if ctx.semantic_memory:
+            error_types = set(ctx.semantic_memory.persistent_errors.keys())
+
+        scored: list[tuple[float, dict]] = []
+        for candidate in candidates:
+            pid = candidate.get("problem_id", "")
+            if not pid:
+                continue
+            score = 0.0
+            problem = await self._bank.get_by_id(pid)
+            if problem is None:
+                continue
+            # Bottleneck bonus
+            for tag in problem.tags:
+                if tag in bottleneck_ids:
+                    score += 2.0
+            # Ready-to-learn bonus
+            for tag in problem.tags:
+                if tag in ready_ids:
+                    score += 1.5
+            # Recently recommended penalty
+            if pid in recently_recommended:
+                score -= 3.0
+            scored.append((score, candidate))
+
+        scored.sort(key=lambda x: -x[0])
+        return [c for _, c in scored]

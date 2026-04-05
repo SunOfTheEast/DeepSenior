@@ -75,6 +75,13 @@ class EpisodicMemory:
     method_slot_matched: str | None = None    # RAG MethodRouter 匹配到的标准化 slot_id
     needs_solution_card_audit: bool = False
     solution_card_audit_reason: str | None = None
+    deep_dive_count: int = 0
+    deep_dive_topics: list[str] = field(default_factory=list)
+    deep_dive_understanding: dict[str, str] = field(default_factory=dict)
+    deferred_deep_dive_tasks: list[dict[str, Any]] = field(default_factory=list)
+
+    # 定性摘要（由 MemoryDistiller 从原始对话 L0 提炼）
+    session_narrative: str = ""
 
     # Review 专属（source==REVIEW 时有值）
     methods_explored: list[str] = field(default_factory=list)
@@ -93,6 +100,7 @@ class EpisodicMemory:
         d = dict(d)
         d["source"] = SessionSource(d["source"])
         d["created_at"] = datetime.fromisoformat(d["created_at"])
+        d.setdefault("session_narrative", "")
         return cls(**d)
 
 
@@ -452,6 +460,51 @@ class SemanticMemory:
 
 
 # =============================================================================
+# 摘要层（Digest / L1.5）
+# =============================================================================
+
+@dataclass
+class MemoryDigest:
+    """
+    聚合摘要：多条 episode 压缩为一段自然语言摘要。
+
+    两种类型：
+      - weekly: 按周聚合，period_key 格式 "2026-W14"
+      - chapter: 按章节聚合，period_key 为章节名（如 "解析几何"）
+    """
+    digest_id: str
+    student_id: str
+    digest_type: str             # "weekly" | "chapter"
+    period_key: str              # "2026-W14" | "解析几何"
+    created_at: datetime
+    episode_ids: list[str]       # 关联的 memory_id 列表
+    summary: str                 # LLM 生成的自然语言摘要
+    stats: dict[str, Any] = field(default_factory=dict)
+    tags_covered: list[str] = field(default_factory=list)
+    methods_used: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "digest_id": self.digest_id,
+            "student_id": self.student_id,
+            "digest_type": self.digest_type,
+            "period_key": self.period_key,
+            "created_at": self.created_at.isoformat(),
+            "episode_ids": self.episode_ids,
+            "summary": self.summary,
+            "stats": self.stats,
+            "tags_covered": self.tags_covered,
+            "methods_used": self.methods_used,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "MemoryDigest":
+        d = dict(d)
+        d["created_at"] = datetime.fromisoformat(d["created_at"])
+        return cls(**d)
+
+
+# =============================================================================
 # 更新指令（MemoryDistillerAgent 的输出）
 # =============================================================================
 
@@ -473,3 +526,4 @@ class MemoryUpdate:
     profile_summary: str | None = None    # 如有更新则非 None
     recent_focus: str | None = None
     persistence_event: bool = False       # 这次会话是否出现了坚持克服困难的事件
+    session_narrative: str = ""           # 从原始对话提炼的定性摘要（情绪/风格/卡点质感）

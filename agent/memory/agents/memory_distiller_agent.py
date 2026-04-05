@@ -52,14 +52,18 @@ class MemoryDistillerAgent(BaseAgent):
         self,
         episode: EpisodicMemory,
         current_semantic: SemanticMemory,
+        turns: list[dict] | None = None,
     ) -> MemoryUpdate:
         """BaseAgent 兼容入口，路由到 distill。"""
-        return await self.distill(episode=episode, current_semantic=current_semantic)
+        return await self.distill(
+            episode=episode, current_semantic=current_semantic, turns=turns,
+        )
 
     async def distill(
         self,
         episode: EpisodicMemory,
         current_semantic: SemanticMemory,
+        turns: list[dict] | None = None,
     ) -> MemoryUpdate:
         """
         从一条情节记忆提炼增量更新。
@@ -86,8 +90,14 @@ class MemoryDistillerAgent(BaseAgent):
         current_profile = current_semantic.to_distill_snapshot(target_tags)
         current_mastery = self._format_mastery(current_semantic, target_tags)
 
+        turns_context = self._format_turns(turns) if turns else "（无原始对话记录）"
+
         assembly = assemble(
-            {"current_profile": current_profile, "current_mastery_summary": current_mastery},
+            {
+                "current_profile": current_profile,
+                "current_mastery_summary": current_mastery,
+                "turns_context": turns_context,
+            },
             MEMORY_DISTILL_POLICY,
             sig_parts={
                 "task": "distill",
@@ -109,6 +119,16 @@ class MemoryDistillerAgent(BaseAgent):
             understanding_summary=", ".join(
                 f"{m}:{q}" for m, q in episode.understanding_summary.items()
             ) or "无",
+            deep_dive_count=episode.deep_dive_count,
+            deep_dive_topics=", ".join(episode.deep_dive_topics) or "无",
+            deep_dive_understanding=", ".join(
+                f"{topic}:{state}" for topic, state in episode.deep_dive_understanding.items()
+            ) or "无",
+            deferred_deep_dive_tasks=", ".join(
+                str(task.get("topic") or "")
+                for task in episode.deferred_deep_dive_tasks
+                if str(task.get("topic") or "").strip()
+            ) or "无",
             hints_given=episode.hints_given,
             attempts=episode.attempts,
             checkpoints_completed=episode.checkpoints_completed,
@@ -120,6 +140,7 @@ class MemoryDistillerAgent(BaseAgent):
             retry_triggered=episode.retry_triggered,
             current_profile=ap.get("current_profile", current_profile),
             current_mastery_summary=ap.get("current_mastery_summary", current_mastery),
+            turns_context=ap.get("turns_context", turns_context),
         )
 
         response = await self.call_llm(
@@ -175,6 +196,7 @@ class MemoryDistillerAgent(BaseAgent):
             profile_summary=data.get("profile_summary") or None,
             recent_focus=data.get("recent_focus") or None,
             persistence_event=bool(data.get("persistence_event", False)),
+            session_narrative=data.get("session_narrative") or "",
         )
 
     def _rule_based_distill(self, episode: EpisodicMemory) -> MemoryUpdate:
@@ -204,6 +226,27 @@ class MemoryDistillerAgent(BaseAgent):
             new_error_types=episode.error_types,
             persistence_event=episode.hints_given > 5,
         )
+
+    # -------------------------------------------------------------------------
+    # Formatting helpers
+    # -------------------------------------------------------------------------
+
+    _MAX_TURNS_FOR_NARRATIVE = 30   # 最多取最近 30 轮
+    _MAX_TURN_CONTENT_CHARS = 200  # 每轮内容截断
+
+    def _format_turns(self, turns: list[dict]) -> str:
+        """将原始对话 turns 格式化为 LLM 可读的文本（截断到预算内）。"""
+        if not turns:
+            return "（无原始对话记录）"
+        recent = turns[-self._MAX_TURNS_FOR_NARRATIVE:]
+        lines: list[str] = []
+        for t in recent:
+            role = t.get("role", "?")
+            content = str(t.get("content", ""))
+            if len(content) > self._MAX_TURN_CONTENT_CHARS:
+                content = content[:self._MAX_TURN_CONTENT_CHARS] + "…"
+            lines.append(f"[{role}] {content}")
+        return "\n".join(lines)
 
     def _format_mastery(self, semantic: SemanticMemory, tags: list[str]) -> str:
         """格式化与本次会话相关的 concept 掌握情况"""

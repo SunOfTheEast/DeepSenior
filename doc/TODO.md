@@ -1,12 +1,13 @@
 # DeepSenior 待办清单
 
-> 更新时间：2026-04-04
+> 更新时间：2026-04-05
 
 ## 高优先级
 
-- [ ] **记忆检索（Memory Retrieval）**：当前只有 `get_recent_episodes(limit=10)` 按时间取最近 N 条。缺按 concept/method/error_type 针对性召回（如"学生上次做十字相乘法的情况"）。推荐系统和 Tutor 个性化引导的前置依赖。
-- [ ] **记忆分层压缩（Memory Compression）**：Episodic memory 只增不减，线性膨胀。需要：老旧 episode 压缩为周/月摘要、相似 episode 合并为统计、profile_summary 定期重生成。否则远期记忆完全丢失。
-- [ ] **推荐系统两路 Recall + Merge**：基于学生画像（weak_concepts/slots）+ 题目相似度（problem_type/method_type）的多路召回，DraftQuestionBank 加 cluster 维度查询。
+- [x] **记忆检索（Memory Retrieval）**：`MemoryIndex` 倒排索引（按 concept/method/error_type/chapter 多维过滤）+ `EmbeddingDigestIndex` 语义检索（digest 层 embedding）。入口：`query_episodes()` + `search_memory()`。
+- [x] **记忆分层压缩（Memory Compression）**：五层模型已实现——L0 turns 永久存储 + L1 episodic 含 session_narrative + L1.5 digest（weekly/chapter 聚合，DigestAgent LLM 生成）+ L2 semantic。`generate_digests()` 按需生成。
+- [x] **知识图谱掌握度推断（MasteryGraph）**：prerequisite DAG 反向索引 + 等权聚合，`StudentMasteryView` 提供 `effective_mastery` / `bottlenecks` / `ready_to_learn`。未来接 DKT 数据驱动权重。
+- [x] **推荐系统 Tool-Use 升级**：RecommendAgent 9 个 tools（画像/图谱/题库）+ tool-use 循环决策 + EmbeddingProblemIndex 语义召回 + 规则排序 + 推荐记录持久化 + MasteryGraph 缓存持久化。
 - [ ] **实时绑卡（学生拍照/教师上传）**：无预绑定的新题走 EmbeddingCardIndex search → L0 菜单 → 对话中 search_knowledge 精修。
 
 ## 中优先级

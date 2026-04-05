@@ -6,6 +6,7 @@ system: |
   - 增量思维：只输出"变化"，不要重写整个画像
   - 区分方法：区分"真正掌握并主动使用"和"复盘时被动了解"
   - 识别模式：关注持续性的错误（多次出现）而非偶发失误
+  - 提炼 narrative：从原始对话中捕捉情绪轨迹、交互风格、卡点质感等定性信息，用一段话概括
 
 distill: |
   本次会话信息：
@@ -19,6 +20,10 @@ distill: |
   - 是否待补齐解法知识卡索引：{needs_solution_card_audit}
   - 本次用于掌握度更新的目标知识点：{tags}
   - 复盘理解质量（仅 review 有值）：{understanding_summary}
+  - 深问次数（仅 tutor 可能有值）：{deep_dive_count}
+  - 深问主题：{deep_dive_topics}
+  - 深问理解结论：{deep_dive_understanding}
+  - 延后深问任务：{deferred_deep_dive_tasks}
   - 提示次数：{hints_given}
   - 尝试次数：{attempts}
   - 完成 checkpoint：{checkpoints_completed}/{total_checkpoints}
@@ -33,6 +38,9 @@ distill: |
 
   本次会话涉及知识点的当前掌握情况：
   {current_mastery_summary}
+
+  原始对话记录（用于提炼 session_narrative）：
+  {turns_context}
 
   请分析这次会话对学生长期画像的影响，以 JSON 格式输出增量更新：
   {{
@@ -50,7 +58,8 @@ distill: |
     "new_error_types": ["本次新增/强化的错误类型"],
     "profile_summary": "如需更新学生整体画像文字，填写新的一段话；无需更新则填null",
     "recent_focus": "最近的学习重点摘要（一句话）；无需更新则填null",
-    "persistence_event": false
+    "persistence_event": false,
+    "session_narrative": "从对话中提炼的定性观察（2-4句话）：描述学生的情绪轨迹（如从困惑到突破）、交互风格（主动/被动）、卡点质感（如看到分式就紧张）、值得注意的学习行为。若无原始对话记录则填空字符串。"
   }}
 
   注意：
@@ -61,3 +70,4 @@ distill: |
   - 如果 solution-level 知识点为空或待补齐索引，concept_updates 可留空，由后台审计任务补齐
   - explored_in_review 的方法：用 "explored_in_review"，不是 "used_successfully"
   - persistence_event：学生卡住后仍然继续完成时为 true
+  - session_narrative：从原始对话提炼定性观察。重点关注：情绪变化轨迹、主动性（自己尝试 vs 等提示）、具体卡点的质感（不是"计算错误"而是"看到通分就犹豫"）、是否展现出迁移或类比能力。若无原始对话则填空字符串

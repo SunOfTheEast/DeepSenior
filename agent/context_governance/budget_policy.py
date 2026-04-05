@@ -64,6 +64,7 @@ PLANNER_POLICY = BudgetPolicy(
     fields_priority=[
         "problem",
         "error_description",
+        "progress_snapshot",
         "student_approach",
         "target_cards",
         "selected_methods",
@@ -117,8 +118,9 @@ MEMORY_DISTILL_POLICY = BudgetPolicy(
         "episode",
         "current_profile",
         "current_mastery_summary",
+        "turns_context",               # 最低优先级，超预算时优先截断
     ],
-    max_total_chars=5000,
+    max_total_chars=8000,              # 增大预算以容纳 turns 上下文
 )
 
 PROGRESS_POLICY = BudgetPolicy(

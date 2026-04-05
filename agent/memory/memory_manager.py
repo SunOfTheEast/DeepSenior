@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from agent.infra.logging import get_logger
+from agent.knowledge.concept_registry import ConceptRegistry
+from agent.knowledge.solution_link_store import SolutionLinkStore
 
 from .data_structures import (
     ConceptUpdate,
@@ -31,6 +33,9 @@ from .data_structures import (
     SessionSource,
     SolutionMasteryRecord,
 )
+from .digest_store import DigestStore
+from .mastery_graph import MasteryGraph, StudentMasteryView
+from .memory_index import MemoryIndex
 from .memory_store import MemoryStore
 from .skills.registry import MemorySkillRegistry
 
@@ -73,6 +78,8 @@ class MemoryManager:
     ):
         self.logger = get_logger("MemoryManager")
         self.store = MemoryStore(base_dir=store_base_dir)
+        self._concept_registry = ConceptRegistry()
+        self._solution_link_store = SolutionLinkStore()
         self._skill_registry = skill_registry or MemorySkillRegistry(
             api_key=api_key,
             base_url=base_url,
@@ -81,6 +88,15 @@ class MemoryManager:
             binding=binding,
         )
         self._distill = self._skill_registry.get("distill_memory")
+        self._index = MemoryIndex(self.store)
+        self._mastery_graph = MasteryGraph(self._concept_registry)
+        self._digest_store = DigestStore(self.store.base_dir)
+        self._digest_agent = None  # lazy init to avoid LLM config at import time
+        self._api_key = api_key
+        self._base_url = base_url
+        self._language = language
+        self._api_version = api_version
+        self._binding = binding
 
     # =========================================================================
     # 写入：会话结束后调用
@@ -91,14 +107,17 @@ class MemoryManager:
         student_id: str,
         episode: EpisodicMemory,
         run_distillation: bool = True,
+        turns: list[dict] | None = None,
     ) -> SemanticMemory:
         """
         提交一次会话记忆：
+          0. 持久化原始对话 turns（L0）
           1. 持久化情节记忆
           2. （可选）调用 LLM 蒸馏，更新语义画像
 
         Args:
             run_distillation: False 时只写情节，不更新语义（用于批量导入历史数据）
+            turns: 原始对话记录（L0），来自 session.interaction_history
 
         Returns:
             更新后的 SemanticMemory
@@ -114,7 +133,7 @@ class MemoryManager:
 
         async with self._get_student_lock(student_id):
             return await self._commit_session_locked(
-                student_id, episode, run_distillation
+                student_id, episode, run_distillation, turns
             )
 
     async def _commit_session_locked(
@@ -122,6 +141,7 @@ class MemoryManager:
         student_id: str,
         episode: EpisodicMemory,
         run_distillation: bool,
+        turns: list[dict] | None = None,
     ) -> SemanticMemory:
         if self.store.has_episodic(student_id, episode.memory_id):
             self.logger.info(
@@ -129,6 +149,13 @@ class MemoryManager:
                 f"(session={episode.session_id}, source={episode.source.value})"
             )
             return self.store.load_or_create_semantic(student_id)
+
+        # 0. 持久化原始对话 (L0)
+        if turns and episode.session_id:
+            self.store.save_turns(student_id, episode.session_id, turns)
+            self.logger.info(
+                f"[{student_id}] Turns saved: {episode.session_id} ({len(turns)} turns)"
+            )
 
         # 1. 保存情节记忆
         self.store.save_episodic(episode)
@@ -140,15 +167,22 @@ class MemoryManager:
         semantic = self.store.load_or_create_semantic(student_id)
 
         if run_distillation:
-            # 3. LLM 蒸馏
-            update = await self._distill(episode, semantic)
+            # 3. LLM 蒸馏（传入 turns 供 narrative 生成）
+            update = await self._distill(episode, semantic, turns=turns)
             self._apply_update(semantic, episode, update)
+            # 将 narrative 写回 episode 并重新保存
+            if update.session_narrative:
+                episode.session_narrative = update.session_narrative
+                self.store.save_episodic(episode)
             self.store.save_semantic(semantic)
             self.logger.info(f"[{student_id}] Semantic updated after distillation")
         else:
             # 不蒸馏时也更新统计计数
             self._update_counters(semantic, episode)
             self.store.save_semantic(semantic)
+
+        # 索引缓存失效
+        self._index.invalidate(student_id)
 
         return semantic
 
@@ -160,13 +194,15 @@ class MemoryManager:
         self,
         student_id: str,
         include_recent_episodes: bool = True,
+        include_digests: bool = True,
     ) -> str:
         """
         获取学生的完整上下文字符串，供 LLM prompt 使用。
 
         包含：
           - 长期语义画像摘要
-          - 中期：最近几次会话的简要记录
+          - 中期摘要（digest）
+          - 近期会话记录
         """
         semantic = self.store.load_semantic(student_id)
         parts = []
@@ -176,16 +212,30 @@ class MemoryManager:
             if long_term and long_term != "（暂无长期记忆）":
                 parts.append(f"【长期画像】\n{long_term}")
 
+        if include_digests:
+            weekly_digests = self._digest_store.list_digests(student_id, "weekly")
+            if weekly_digests:
+                lines = ["【近期学习摘要】"]
+                for d in weekly_digests[:3]:
+                    lines.append(f"  {d.period_key}: {d.summary[:150]}")
+                parts.append("\n".join(lines))
+
         if include_recent_episodes:
             recent = self.store.list_episodic(student_id, limit=self.WORKING_MEMORY_WINDOW)
             if recent:
                 lines = ["【近期会话记录】"]
                 for ep in recent[:5]:  # 只展示最近5条
                     dt = ep.created_at.strftime("%m-%d")
+                    extras: list[str] = []
+                    if ep.deep_dive_count:
+                        extras.append(f"深问{ep.deep_dive_count}次")
+                    if ep.deferred_deep_dive_tasks:
+                        extras.append(f"延后任务{len(ep.deferred_deep_dive_tasks)}条")
+                    extra_text = f", {'; '.join(extras)}" if extras else ""
                     lines.append(
                         f"  {dt} [{ep.source.value}] {ep.chapter} — "
                         f"{ep.outcome}, 提示{ep.hints_given}次, "
-                        f"方法: {', '.join(ep.methods_used) or '?'}"
+                        f"方法: {', '.join(ep.methods_used) or '?'}{extra_text}"
                     )
                 parts.append("\n".join(lines))
 
@@ -195,6 +245,13 @@ class MemoryManager:
         """直接获取语义画像，供 Progress 模块使用"""
         return self.store.load_semantic(student_id)
 
+    def get_mastery_view(self, student_id: str) -> StudentMasteryView | None:
+        """获取图感知的掌握度视图，供 Progress / Recommend 使用。"""
+        semantic = self.store.load_semantic(student_id)
+        if semantic is None:
+            return None
+        return self._mastery_graph.overlay(semantic)
+
     def get_recent_episodes(
         self,
         student_id: str,
@@ -202,6 +259,356 @@ class MemoryManager:
         source: str | None = None,
     ) -> list[EpisodicMemory]:
         return self.store.list_episodic(student_id, limit=limit, source=source)
+
+    def query_episodes(
+        self,
+        student_id: str,
+        *,
+        concept_ids: list[str] | None = None,
+        chapter: str | None = None,
+        outcome: str | None = None,
+        method_slot: str | None = None,
+        error_types: list[str] | None = None,
+        source: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        limit: int = 20,
+        load_full: bool = False,
+    ) -> list[Any]:
+        """
+        多维结构化检索 episode。
+
+        Args:
+            load_full: True 时返回 list[EpisodicMemory]，False 时返回 list[IndexEntry]（轻量）
+
+        Returns:
+            匹配的 episode 列表（按时间倒序）
+        """
+        from .memory_index import IndexEntry  # noqa: F811
+        entries = self._index.query(
+            student_id,
+            concept_ids=concept_ids,
+            chapter=chapter,
+            outcome=outcome,
+            method_slot=method_slot,
+            error_types=error_types,
+            source=source,
+            since=since,
+            until=until,
+            limit=limit,
+        )
+        if load_full:
+            return self._index.get_episodes(student_id, entries)
+        return entries
+
+    # =========================================================================
+    # Digest 层（L1.5）：聚合摘要 + 语义检索
+    # =========================================================================
+
+    def _ensure_digest_agent(self):
+        if self._digest_agent is None:
+            from .agents.digest_agent import DigestAgent
+            self._digest_agent = DigestAgent(
+                api_key=self._api_key,
+                base_url=self._base_url,
+                language=self._language,
+                api_version=self._api_version,
+                binding=self._binding,
+            )
+        return self._digest_agent
+
+    async def generate_digests(
+        self,
+        student_id: str,
+        force: bool = False,
+    ) -> list:
+        """
+        检查并生成需要更新的 digest（weekly + chapter）。
+
+        Args:
+            force: True 时强制重新生成所有 digest
+        Returns:
+            新生成的 MemoryDigest 列表
+        """
+        from .data_structures import MemoryDigest
+
+        episodes = self.store.list_episodic(student_id, limit=None)
+        if not episodes:
+            return []
+
+        agent = self._ensure_digest_agent()
+        generated: list[MemoryDigest] = []
+
+        # --- Weekly digests ---
+        by_week: dict[str, list] = {}
+        for ep in episodes:
+            week_key = ep.created_at.strftime("%G-W%V")
+            by_week.setdefault(week_key, []).append(ep)
+
+        for week_key, week_eps in by_week.items():
+            if len(week_eps) < 2 and not force:
+                continue
+            existing = self._digest_store.load_digest(student_id, "weekly", week_key)
+            if existing and not force:
+                # 检查是否有新 episode
+                existing_ids = set(existing.episode_ids)
+                if all(ep.memory_id in existing_ids for ep in week_eps):
+                    continue
+            digest = await agent.generate_weekly(student_id, week_key, week_eps)
+            self._digest_store.save_digest(digest)
+            generated.append(digest)
+
+        # --- Chapter digests ---
+        by_chapter: dict[str, list] = {}
+        for ep in episodes:
+            if ep.chapter:
+                by_chapter.setdefault(ep.chapter, []).append(ep)
+
+        for chapter, ch_eps in by_chapter.items():
+            if len(ch_eps) < 2 and not force:
+                continue
+            existing = self._digest_store.load_digest(student_id, "chapter", chapter)
+            if existing and not force:
+                existing_ids = set(existing.episode_ids)
+                if all(ep.memory_id in existing_ids for ep in ch_eps):
+                    continue
+            digest = await agent.generate_chapter(student_id, chapter, ch_eps)
+            self._digest_store.save_digest(digest)
+            generated.append(digest)
+
+        if generated:
+            self.logger.info(
+                f"[{student_id}] Generated {len(generated)} digests "
+                f"(weekly={sum(1 for d in generated if d.digest_type == 'weekly')}, "
+                f"chapter={sum(1 for d in generated if d.digest_type == 'chapter')})"
+            )
+        return generated
+
+    def get_digests(
+        self,
+        student_id: str,
+        digest_type: str | None = None,
+    ) -> list:
+        """获取学生的 digest 列表。"""
+        return self._digest_store.list_digests(student_id, digest_type)
+
+    def search_memory(
+        self,
+        student_id: str,
+        query: str,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+        """
+        语义检索学生记忆。
+
+        结合 digest 层语义搜索 + 最近未 digest 的 episode 结构化补查。
+
+        Returns:
+            {
+                "digests": list[MemoryDigest],
+                "recent_undigested": list[EpisodicMemory],
+            }
+        """
+        import os
+        from .digest_index import EmbeddingDigestIndex
+
+        digests = self._digest_store.list_digests(student_id)
+        matched_digests = []
+
+        if digests:
+            zhipuai_key = os.environ.get("ZHIPUAI_API_KEY", "")
+            if zhipuai_key:
+                cache_dir = self.store.base_dir / student_id / ".digest_embedding_cache"
+                idx = EmbeddingDigestIndex(api_key=zhipuai_key, cache_dir=str(cache_dir))
+                idx.build(digests)
+                results = idx.search(query, top_k=top_k)
+                digest_map = {d.digest_id: d for d in digests}
+                matched_digests = [
+                    digest_map[did] for did, _ in results
+                    if did in digest_map
+                ]
+
+        # 补查最近未被 digest 覆盖的 episode
+        digested_ids: set[str] = set()
+        for d in digests:
+            digested_ids.update(d.episode_ids)
+        recent = self.store.list_episodic(student_id, limit=10)
+        undigested = [ep for ep in recent if ep.memory_id not in digested_ids]
+
+        return {
+            "digests": matched_digests,
+            "recent_undigested": undigested,
+        }
+
+    def replay_pending_audit_tasks(
+        self,
+        student_id: str,
+        limit: int = 50,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """对单个学生补回已具备索引条件的 pending audit 任务。"""
+        semantic = self.store.load_semantic(student_id)
+        if semantic is None:
+            return {
+                "student_id": student_id,
+                "session_id": session_id,
+                "replayed": 0,
+                "unresolved": 0,
+                "changed": False,
+            }
+
+        episodes = self.store.list_episodic(student_id, limit=None, source=SessionSource.TUTOR.value)
+        episodes_by_session = {ep.session_id: ep for ep in episodes if ep.session_id}
+        replayed = 0
+        unresolved = 0
+        changed = False
+        bridged_solution_ids: set[str] = set()
+
+        for task in semantic.pending_audit_tasks:
+            if replayed >= limit:
+                break
+            if task.get("status") in {"done", "rejected"}:
+                continue
+            if session_id and task.get("session_id") != session_id:
+                continue
+
+            episode = episodes_by_session.get(task.get("session_id", ""))
+            if episode is None:
+                unresolved += 1
+                continue
+
+            resolved_concepts = self._resolve_replay_concepts(task=task, episode=episode)
+            if not resolved_concepts:
+                unresolved += 1
+                continue
+
+            now = datetime.utcnow()
+            solution_id = episode.solution_id or task.get("solution_id")
+            if solution_id:
+                solution_rec = semantic.solution_mastery.get(solution_id)
+                if solution_rec is None:
+                    solution_rec, _ = self._update_solution_mastery(
+                        semantic=semantic,
+                        episode=episode,
+                        now=now,
+                    )
+                if solution_rec:
+                    was_ready = solution_rec.index_status == "ready"
+                    solution_rec.linked_concepts = list(dict.fromkeys(resolved_concepts))
+                    solution_rec.index_status = "ready"
+                    if not was_ready and solution_id not in bridged_solution_ids:
+                        self._bridge_solution_delta_to_concepts(
+                            semantic=semantic,
+                            linked_concepts=solution_rec.linked_concepts,
+                            solution_delta=self._estimate_solution_delta(episode),
+                            already_updated=set(),
+                            now=now,
+                        )
+                        bridged_solution_ids.add(solution_id)
+
+            task["status"] = "done"
+            task["resolved_at"] = now.isoformat()
+            task["resolved_concepts"] = list(dict.fromkeys(resolved_concepts))
+            task["replay_source"] = "concept_registry"
+            changed = True
+            replayed += 1
+
+        if changed:
+            semantic.last_updated = datetime.utcnow()
+            self.store.save_semantic(semantic)
+            self.logger.info(
+                f"[{student_id}] Replayed pending audit tasks: replayed={replayed}, unresolved={unresolved}"
+            )
+        return {
+            "student_id": student_id,
+            "session_id": session_id,
+            "replayed": replayed,
+            "unresolved": unresolved,
+            "changed": changed,
+        }
+
+    def replay_from_audit_entry(
+        self,
+        record: dict[str, Any],
+        limit_per_student: int = 50,
+    ) -> dict[str, Any]:
+        """按单条审计记录自动触发定向 replay。"""
+        session_id = str(record.get("session_id") or "").strip() or None
+        explicit_student_id = str(record.get("student_id") or "").strip() or None
+        matched_by = "student_id" if explicit_student_id else "session_id"
+        candidate_student_ids = (
+            [explicit_student_id]
+            if explicit_student_id
+            else self._find_student_ids_by_session(session_id)
+        )
+
+        if not candidate_student_ids:
+            return {
+                "triggered": False,
+                "matched_by": matched_by,
+                "session_id": session_id,
+                "student_ids": [],
+                "results": {},
+                "replayed": 0,
+                "unresolved": 0,
+                "changed": False,
+                "reason": "student_not_found",
+            }
+
+        results: dict[str, Any] = {}
+        total_replayed = 0
+        total_unresolved = 0
+        any_changed = False
+
+        for student_id in candidate_student_ids:
+            result = self.replay_pending_audit_tasks(
+                student_id,
+                limit=limit_per_student,
+                session_id=session_id,
+            )
+            results[student_id] = result
+            total_replayed += int(result.get("replayed", 0))
+            total_unresolved += int(result.get("unresolved", 0))
+            any_changed = any_changed or bool(result.get("changed", False))
+
+        return {
+            "triggered": True,
+            "matched_by": matched_by,
+            "session_id": session_id,
+            "student_ids": candidate_student_ids,
+            "results": results,
+            "replayed": total_replayed,
+            "unresolved": total_unresolved,
+            "changed": any_changed,
+        }
+
+    def replay_all_pending_audit_tasks(
+        self,
+        limit_per_student: int = 50,
+    ) -> dict[str, dict[str, Any]]:
+        """批量回放所有学生的 pending audit 任务。"""
+        results: dict[str, dict[str, Any]] = {}
+        for student_id in self.store.list_students():
+            results[student_id] = self.replay_pending_audit_tasks(
+                student_id,
+                limit=limit_per_student,
+            )
+        return results
+
+    def _find_student_ids_by_session(self, session_id: str | None) -> list[str]:
+        if not session_id:
+            return []
+
+        matched: list[str] = []
+        for student_id in self.store.list_students():
+            episodes = self.store.list_episodic(
+                student_id,
+                limit=None,
+                source=SessionSource.TUTOR.value,
+            )
+            if any(ep.session_id == session_id for ep in episodes):
+                matched.append(student_id)
+        return matched
 
     # =========================================================================
     # 工厂方法：从 session export 构建 EpisodicMemory
@@ -244,6 +651,10 @@ class MemoryManager:
             method_slot_matched=export.get("method_slot_matched"),
             needs_solution_card_audit=bool(export.get("needs_solution_card_audit", False)),
             solution_card_audit_reason=export.get("solution_card_audit_reason"),
+            deep_dive_count=export.get("deep_dive_count", 0),
+            deep_dive_topics=export.get("deep_dive_topics", []),
+            deep_dive_understanding=export.get("deep_dive_understanding", {}),
+            deferred_deep_dive_tasks=export.get("deferred_deep_dive_tasks", []),
         )
 
     @staticmethod
@@ -283,6 +694,10 @@ class MemoryManager:
             method_slot_matched=export.get("method_slot_matched"),
             needs_solution_card_audit=False,
             solution_card_audit_reason=None,
+            deep_dive_count=0,
+            deep_dive_topics=[],
+            deep_dive_understanding={},
+            deferred_deep_dive_tasks=[],
             methods_explored=export.get("methods_explored", []),
             retry_triggered=export.get("retry_triggered", False),
             retry_method=export.get("retry_method"),
@@ -643,6 +1058,7 @@ class MemoryManager:
             "chapter": episode.chapter,
             "solution_id": episode.solution_id,
             "solution_method": episode.solution_method,
+            "method_slot_matched": episode.method_slot_matched,
             "question_tags": list(episode.tags),
             "solution_tags": list(episode.solution_tags),
             "reason": reason,
@@ -664,6 +1080,35 @@ class MemoryManager:
             semantic.avg_hints_per_session = (
                 semantic.total_hints_given / semantic.total_sessions
             )
+
+    def _resolve_replay_concepts(
+        self,
+        *,
+        task: dict[str, Any],
+        episode: EpisodicMemory,
+    ) -> list[str]:
+        """从当前知识层为旧任务补出 concept 绑定。"""
+        concept_ids: list[str] = []
+
+        solution_id = episode.solution_id or task.get("solution_id")
+        if solution_id:
+            published = self._solution_link_store.get(solution_id=solution_id)
+            if published:
+                for concept_id in list(published.get("concept_ids", []) or []):
+                    if concept_id and concept_id not in concept_ids:
+                        concept_ids.append(concept_id)
+
+        for concept_id in list(episode.solution_tags or []) + list(task.get("solution_tags", []) or []):
+            if concept_id and concept_id not in concept_ids:
+                concept_ids.append(concept_id)
+
+        slot_id = episode.method_slot_matched or task.get("method_slot_matched")
+        if slot_id:
+            for node in self._concept_registry.find_by_slot(slot_id):
+                if node.concept_id not in concept_ids:
+                    concept_ids.append(node.concept_id)
+
+        return concept_ids
 
 
 # =============================================================================
